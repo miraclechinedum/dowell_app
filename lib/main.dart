@@ -1,11 +1,27 @@
 import 'package:flutter/material.dart';
-import 'features/auth/screens/welcome_screen.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+// Core imports
+import 'core/services/firebase_service.dart';
+import 'core/navigation/auth_wrapper.dart';
+
+// Auth screens imports
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'features/auth/screens/role_selection_screen.dart';
 
-void main() {
-  runApp(const MyApp());
+// Dashboard screens imports
+import 'features/dashboard/screens/customer_dashboard.dart';
+import 'features/dashboard/screens/employee_dashboard.dart';
+import 'features/dashboard/screens/admin_dashboard.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await FirebaseService.initialize();
+
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {
@@ -33,9 +49,9 @@ class MyApp extends StatelessWidget {
       ),
       initialRoute: '/',
       routes: {
-        '/': (context) => const WelcomeScreen(),
-        '/login': (context) => LoginScreen(), // Not const (has controllers)
-        '/register': (context) => const RegisterScreen(), // Already correct
+        '/': (context) => const AuthWrapper(),
+        '/login': (context) => LoginScreen(),
+        '/register': (context) => const RegisterScreen(),
         '/role-selection': (context) => const RoleSelectionScreen(),
       },
       debugShowCheckedModeBanner: false,

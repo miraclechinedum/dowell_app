@@ -9,9 +9,12 @@ class FormTextField extends StatelessWidget {
   final TextInputType keyboardType;
   final String? errorText;
   final IconData? prefixIcon;
+  final Widget? suffixIcon; // Add suffixIcon parameter
+  final String? Function(String?)? validator;
+  final void Function(String)? onChanged;
 
   const FormTextField({
-    super.key, // Fixed: Use super.key
+    super.key,
     required this.label,
     this.controller,
     this.hintText,
@@ -19,6 +22,9 @@ class FormTextField extends StatelessWidget {
     this.keyboardType = TextInputType.text,
     this.errorText,
     this.prefixIcon,
+    this.suffixIcon, // Add to constructor
+    this.validator,
+    this.onChanged,
   });
 
   @override
@@ -35,13 +41,16 @@ class FormTextField extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        TextField(
+        TextFormField(
           controller: controller,
           obscureText: obscureText,
           keyboardType: keyboardType,
+          validator: validator,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hintText,
             prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
+            suffixIcon: suffixIcon, // Use suffixIcon here
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
@@ -67,6 +76,7 @@ class FormTextField extends StatelessWidget {
               horizontal: 16,
               vertical: 16,
             ),
+            errorStyle: const TextStyle(fontSize: 12),
           ),
         ),
         const SizedBox(height: 16),

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "12126775970",
+    "project_id": "dowell-pest-control",
+    "storage_bucket": "dowell-pest-control.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:12126775970:android:e00994e0d9e2d9e358c5fb",
+        "android_client_info": {
+          "package_name": "com.example.dowell_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "12126775970-8g4117dmjbj0ji48gkiqld3r7g6kddmp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARKOdYRfsvDEpphn5Yo_R-cLEG74kxsYg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "12126775970-8g4117dmjbj0ji48gkiqld3r7g6kddmp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

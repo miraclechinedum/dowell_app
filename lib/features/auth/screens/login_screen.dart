@@ -1,26 +1,63 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:loading_animation_widget/loading_animation_widget.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/form_text_field.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../core/providers/auth_provider.dart';
 import 'register_screen.dart';
 
-class LoginScreen extends StatelessWidget {
-  LoginScreen({super.key});
+class LoginScreen extends ConsumerStatefulWidget {
+  const LoginScreen({super.key});
 
+  @override
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authProvider.notifier).clearError();
+    });
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+
+    // 🔄 Loading state
+    if (authState.status == AuthStatus.loading) {
+      return Scaffold(
+        backgroundColor: AppColors.warmOffWhite,
+        body: Center(
+          child: LoadingAnimationWidget.staggeredDotsWave(
+            color: AppColors.primary,
+            size: 60,
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.warmOffWhite,
       appBar: AppBar(
+        automaticallyImplyLeading: false, // ✅ IMPORTANT
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
-          onPressed: () => Navigator.pop(context),
-        ),
         title: const Text(
           'Sign In',
           style: TextStyle(color: AppColors.textDark),
@@ -34,7 +71,6 @@ class LoginScreen extends StatelessWidget {
             children: [
               const SizedBox(height: 20),
 
-              // Welcome back text
               const Text(
                 'Welcome Back',
                 style: TextStyle(
@@ -53,8 +89,36 @@ class LoginScreen extends StatelessWidget {
 
               const SizedBox(height: 40),
 
-              // Login Form
+              // ❌ Error message
+              if (authState.error != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: AppColors.error),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          authState.error!,
+                          style: const TextStyle(
+                            color: AppColors.error,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // 🔐 Login Form
               Form(
+                key: _formKey,
                 child: Column(
                   children: [
                     FormTextField(
@@ -63,6 +127,15 @@ class LoginScreen extends StatelessWidget {
                       prefixIcon: Icons.email,
                       controller: emailController,
                       keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your email';
+                        }
+                        if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                          return 'Please enter a valid email';
+                        }
+                        return null;
+                      },
                     ),
 
                     FormTextField(
@@ -71,17 +144,23 @@ class LoginScreen extends StatelessWidget {
                       obscureText: true,
                       prefixIcon: Icons.lock,
                       controller: passwordController,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your password';
+                        }
+                        if (value.length < 6) {
+                          return 'Password must be at least 6 characters';
+                        }
+                        return null;
+                      },
                     ),
 
                     const SizedBox(height: 8),
 
-                    // Forgot Password
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {
-                          _showForgotPasswordDialog(context);
-                        },
+                        onPressed: () => _showForgotPasswordDialog(context),
                         child: const Text(
                           'Forgot Password?',
                           style: TextStyle(
@@ -94,17 +173,17 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 24),
 
-                    // Login Button
                     PrimaryButton(
                       text: 'Sign In',
-                      onPressed: () {
-                        _login(context);
+                      onPressed: () async {
+                        if (_formKey.currentState!.validate()) {
+                          await _login();
+                        }
                       },
                     ),
 
                     const SizedBox(height: 32),
 
-                    // Divider with "or"
                     Row(
                       children: [
                         Expanded(
@@ -112,8 +191,8 @@ class LoginScreen extends StatelessWidget {
                             color: AppColors.textNeutral.withOpacity(0.3),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
                           child: Text(
                             'or continue with',
                             style: TextStyle(color: AppColors.textNeutral),
@@ -129,43 +208,31 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 24),
 
-                    // Social Login Buttons
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Google
                         _buildSocialButton(
                           icon: Icons.g_mobiledata,
                           color: const Color(0xFFDB4437),
-                          onPressed: () => _socialLogin('Google', context),
+                          onPressed: () => _socialLogin('Google'),
                         ),
-
                         const SizedBox(width: 16),
-
-                        // Facebook
                         _buildSocialButton(
                           icon: Icons.facebook,
                           color: const Color(0xFF4267B2),
-                          onPressed: () => _socialLogin('Facebook', context),
+                          onPressed: () => _socialLogin('Facebook'),
                         ),
-
                         const SizedBox(width: 16),
-
-                        // Apple
-                        // Line ~155 in login_screen.dart
-                        // Apple
                         _buildSocialButton(
-                          // Changed from _BuildSocialButton
                           icon: Icons.apple,
                           color: Colors.black,
-                          onPressed: () => _socialLogin('Apple', context),
+                          onPressed: () => _socialLogin('Apple'),
                         ),
                       ],
                     ),
 
                     const SizedBox(height: 32),
 
-                    // Register Link
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -173,14 +240,12 @@ class LoginScreen extends StatelessWidget {
                           "Don't have an account yet? ",
                           style: TextStyle(color: AppColors.textNeutral),
                         ),
-                        // Line ~178 in login_screen.dart
                         GestureDetector(
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    const RegisterScreen(), // Already correct
+                                builder: (_) => const RegisterScreen(),
                               ),
                             );
                           },
@@ -215,83 +280,62 @@ class LoginScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.buttonBorder, width: 1),
+        border: Border.all(color: AppColors.buttonBorder),
       ),
       child: IconButton(
+        icon: Icon(icon, color: color),
         onPressed: onPressed,
-        icon: Icon(icon, color: color, size: 24),
       ),
     );
   }
 
-  void _login(BuildContext context) {
-    final email = emailController.text.trim();
-    final password = passwordController.text;
+  Future<void> _login() async {
+    ref.read(authProvider.notifier).clearError();
 
-    if (email.isEmpty || password.isEmpty) {
-      _showSnackBar(context, 'Please enter email and password');
-      return;
-    }
-
-    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email)) {
-      _showSnackBar(context, 'Please enter a valid email address');
-      return;
-    }
-
-    // Simulate login process
-    _showSnackBar(context, 'Login successful!');
-
-    // In real app, navigate to dashboard or role selection
-    // Navigator.pushReplacementNamed(context, '/dashboard');
+    await ref
+        .read(authProvider.notifier)
+        .loginWithEmail(
+          email: emailController.text.trim(),
+          password: passwordController.text,
+        );
   }
 
-  void _socialLogin(String platform, BuildContext context) {
-    _showSnackBar(context, 'Signing in with $platform...');
-    // Implement actual social login here
+  void _socialLogin(String platform) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$platform login coming soon!'),
+        backgroundColor: AppColors.primary,
+      ),
+    );
   }
 
   void _showForgotPasswordDialog(BuildContext context) {
+    final controller = TextEditingController();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Reset Password'),
-        content: const Text(
-          'Enter your email to receive a password reset link:',
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'Email address'),
         ),
         actions: [
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'Email address',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _showSnackBar(context, 'Password reset link sent!');
-                },
-                child: const Text('Send Link'),
-              ),
-            ],
+          ElevatedButton(
+            onPressed: () async {
+              await ref
+                  .read(authProvider.notifier)
+                  .resetPassword(controller.text.trim());
+              Navigator.pop(context);
+            },
+            child: const Text('Send Link'),
           ),
         ],
       ),
-    );
-  }
-
-  void _showSnackBar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.primary),
     );
   }
 }
