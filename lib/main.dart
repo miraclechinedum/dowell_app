@@ -8,12 +8,19 @@ import 'core/navigation/auth_wrapper.dart';
 // Auth screens imports
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
-import 'features/auth/screens/role_selection_screen.dart';
+import 'features/auth/screens/role_request_screen.dart';
+import 'features/auth/screens/pending_approval_screen.dart';
 
 // Dashboard screens imports
 import 'features/dashboard/screens/customer_dashboard.dart';
 import 'features/dashboard/screens/employee_dashboard.dart';
+import 'features/dashboard/screens/nil_athlete_dashboard.dart';
 import 'features/dashboard/screens/admin_dashboard.dart';
+
+// Customer screens imports
+import 'features/dashboard/screens/customer/submit_referral_screen.dart';
+import 'features/dashboard/screens/customer/referrals_list_screen.dart';
+import 'features/dashboard/screens/customer/referral_details_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,7 +59,11 @@ class MyApp extends StatelessWidget {
         '/': (context) => const AuthWrapper(),
         '/login': (context) => LoginScreen(),
         '/register': (context) => const RegisterScreen(),
-        '/role-selection': (context) => const RoleSelectionScreen(),
+        '/role-request': (context) => RoleRequestScreen(),
+        '/pending-approval': (context) => const PendingApprovalScreen(),
+        '/submit-referral': (context) => SubmitReferralScreen(),
+        '/referrals': (context) => const ReferralsListScreen(),
+        // Note: referral-details needs arguments, so we'll handle it differently
       },
       debugShowCheckedModeBanner: false,
     );

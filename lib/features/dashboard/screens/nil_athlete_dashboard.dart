@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,38 +7,34 @@ import '../../../core/providers/auth_provider.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/primary_button.dart';
 
-// Import customer screens
-import './customer/submit_referral_screen.dart';
-import './customer/referrals_list_screen.dart';
-
-class CustomerDashboardScreen extends ConsumerStatefulWidget {
-  const CustomerDashboardScreen({super.key});
+class NilAthleteDashboardScreen extends ConsumerStatefulWidget {
+  const NilAthleteDashboardScreen({super.key});
 
   @override
-  ConsumerState<CustomerDashboardScreen> createState() =>
-      _CustomerDashboardScreenState();
+  ConsumerState<NilAthleteDashboardScreen> createState() =>
+      _NilAthleteDashboardScreenState();
 }
 
-class _CustomerDashboardScreenState
-    extends ConsumerState<CustomerDashboardScreen> {
+class _NilAthleteDashboardScreenState
+    extends ConsumerState<NilAthleteDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
     final user = authState.user;
 
-    final userEmail = user?.email ?? 'Customer';
+    final userEmail = user?.email ?? 'NIL Athlete';
     final userName = user?.displayName ?? userEmail.split('@').first;
 
     // Mock data
-    final bugBucks = 1250;
-    final pendingReferrals = 2;
-    const convertedReferrals = 8;
-    const totalEarned = 2500;
+    final sponsorshipEarnings = 5000.00;
+    final pendingReferrals = 3;
+    const convertedReferrals = 15;
+    const totalReferrals = 25;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Customer Dashboard'),
+        title: const Text('NIL Athlete Dashboard'),
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
@@ -66,12 +61,12 @@ class _CustomerDashboardScreenState
                           width: 60,
                           height: 60,
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
+                            color: Colors.green.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(30),
                           ),
                           child: const Icon(
-                            Icons.person,
-                            color: AppColors.primary,
+                            Icons.sports,
+                            color: Colors.green,
                             size: 32,
                           ),
                         ),
@@ -99,11 +94,29 @@ class _CustomerDashboardScreenState
                             ],
                           ),
                         ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'NIL ATHLETE',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      'Earn Bug Bucks by referring friends and family',
+                      'Manage your sponsorship and earn from referrals',
                       style: TextStyle(
                         fontSize: 14,
                         color: AppColors.textNeutral,
@@ -115,112 +128,39 @@ class _CustomerDashboardScreenState
 
               const SizedBox(height: 20),
 
-              /// Role Upgrade Request Card
-              AppCard(
-                child: Column(
-                  children: [
-                    const Text(
-                      'Want More Features?',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Request access to Employee, NIL Athlete, or Admin features',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textNeutral,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    OutlinedButton(
-                      onPressed: () => _navigateToRoleRequest(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        side: BorderSide(color: AppColors.primary),
-                      ),
-                      child: const Text(
-                        'Request Role Upgrade',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              /// Bug Bucks Balance - FIXED LAYOUT
+              /// Sponsorship Earnings
               AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Bug Bucks Balance',
+                      'Sponsorship Earnings',
                       style: TextStyle(
                         fontSize: 16,
                         color: AppColors.textNeutral,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    // FIX: Wrap the Row in a Container with constraints
-                    Container(
-                      constraints: const BoxConstraints(
-                        maxWidth: double.infinity,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  bugBucks.toString(),
-                                  style: const TextStyle(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                                Text(
-                                  'Bug Bucks',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ],
-                            ),
+                    Row(
+                      children: [
+                        Text(
+                          '\$$sponsorshipEarnings',
+                          style: const TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green,
                           ),
-                          const SizedBox(width: 8),
-                          // FIX: Give the button a fixed width or use IntrinsicWidth
-                          SizedBox(
-                            width: 120, // Fixed width for the button
-                            child: PrimaryButton(
-                              text: 'Redeem',
-                              onPressed: () => _showRedeemDialog(context),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const Spacer(),
+                        PrimaryButton(
+                          text: 'Withdraw',
+                          onPressed: () => _showWithdrawDialog(context),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '1 Bug Buck = \$1.00 value',
+                      'Available for withdrawal',
                       style: TextStyle(
                         fontSize: 12,
                         color: AppColors.textNeutral,
@@ -293,7 +233,7 @@ class _CustomerDashboardScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Total Earned',
+                            'Total Referrals',
                             style: TextStyle(
                               fontSize: 14,
                               color: AppColors.textNeutral,
@@ -301,9 +241,9 @@ class _CustomerDashboardScreenState
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '\$$totalEarned',
+                            totalReferrals.toString(),
                             style: const TextStyle(
-                              fontSize: 18,
+                              fontSize: 24,
                               fontWeight: FontWeight.w700,
                               color: AppColors.textDark,
                             ),
@@ -318,45 +258,36 @@ class _CustomerDashboardScreenState
               const SizedBox(height: 20),
 
               /// Action Buttons
-              Column(
-                children: [
-                  // Submit New Referral Button
-                  PrimaryButton(
-                    text: 'Submit New Referral',
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SubmitReferralScreen(),
-                      ),
-                    ),
-                  ),
+              SizedBox(
+                width: double.infinity,
+                child: PrimaryButton(
+                  text: 'Submit New Referral',
+                  onPressed: () => _navigateToSubmitReferral(context),
+                ),
+              ),
 
-                  const SizedBox(height: 12),
+              const SizedBox(height: 20),
 
-                  // View Referrals Button
-                  OutlinedButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ReferralsListScreen(),
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      side: BorderSide(color: AppColors.primary),
-                    ),
-                    child: const Text(
-                      'View My Referrals',
+              /// Sponsorship Details
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Sponsorship Details',
                       style: TextStyle(
-                        color: AppColors.primary,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
+                        color: AppColors.textDark,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    _buildSponsorshipRow('Sponsorship Tier:', 'Gold'),
+                    _buildSponsorshipRow('Commission Rate:', '15%'),
+                    _buildSponsorshipRow('Contract End Date:', 'Dec 31, 2025'),
+                    _buildSponsorshipRow('Payment Method:', 'Direct Deposit'),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 40),
@@ -367,26 +298,43 @@ class _CustomerDashboardScreenState
     );
   }
 
+  Widget _buildSponsorshipRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 14, color: AppColors.textNeutral),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDark,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _logoutUser(BuildContext context) async {
     try {
-      print("🚀 Starting logout process...");
-
       // Sign out from Firebase
       await FirebaseAuth.instance.signOut();
-      print("✅ Firebase signOut successful");
-
-      // Add a small delay before navigation
-      await Future.delayed(const Duration(milliseconds: 100));
 
       // Navigate to login screen
       Navigator.of(
         context,
         rootNavigator: true,
       ).pushNamedAndRemoveUntil('/login', (route) => false);
-      print("✅ Navigation to login initiated");
     } catch (e) {
       print("❌ Logout error: $e");
-      // Even on error, try to navigate to login
+      // Even on error, navigate to login
       Navigator.of(
         context,
         rootNavigator: true,
@@ -394,14 +342,13 @@ class _CustomerDashboardScreenState
     }
   }
 
-  void _showRedeemDialog(BuildContext context) {
-    // Use a post-frame callback to ensure widget is fully built
+  void _showWithdrawDialog(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('Redeem Bug Bucks'),
-          content: const Text('Redemption coming soon'),
+          title: const Text('Withdraw Earnings'),
+          content: const Text('Withdrawal feature coming soon'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -413,9 +360,11 @@ class _CustomerDashboardScreenState
     });
   }
 
-  void _navigateToRoleRequest(BuildContext context) {
+  void _navigateToSubmitReferral(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Navigator.pushNamed(context, '/role-request');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Submit Referral screen coming soon!')),
+      );
     });
   }
 }

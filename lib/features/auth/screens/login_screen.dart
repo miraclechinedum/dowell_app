@@ -124,7 +124,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     FormTextField(
                       label: 'Email Address',
                       hintText: 'you@example.com',
-                      prefixIcon: Icons.email,
+                      prefixIcon: const Icon(Icons.email),
                       controller: emailController,
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
@@ -142,7 +142,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       label: 'Password',
                       hintText: 'Enter your password',
                       obscureText: true,
-                      prefixIcon: Icons.lock,
+                      prefixIcon: const Icon(Icons.lock),
                       controller: passwordController,
                       validator: (value) {
                         if (value == null || value.isEmpty) {

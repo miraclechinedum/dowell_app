@@ -172,7 +172,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     FormTextField(
                       label: 'Email Address',
                       hintText: 'you@example.com',
-                      prefixIcon: Icons.email,
+                      prefixIcon: const Icon(Icons.email),
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
@@ -190,7 +190,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     FormTextField(
                       label: 'Password',
                       hintText: 'Create a strong password',
-                      prefixIcon: Icons.lock,
+                      prefixIcon: const Icon(Icons.lock),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _showPassword
@@ -221,7 +221,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     FormTextField(
                       label: 'Confirm Password',
                       hintText: 'Re-enter your password',
-                      prefixIcon: Icons.lock_outline,
+                      prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _showConfirmPassword
@@ -534,35 +534,34 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     // Clear any previous errors
     ref.read(authProvider.notifier).clearError();
 
-    // Call the auth provider to register
-    await ref
-        .read(authProvider.notifier)
-        .registerWithEmail(
-          email: email,
-          password: password,
-          role: 'customer', // Default role
+    try {
+      // Call the auth provider to register
+      await ref
+          .read(authProvider.notifier)
+          .registerWithEmail(email: email, password: password);
+
+      // Check registration result
+      final authState = ref.read(authProvider);
+
+      if (authState.status == AuthStatus.authenticated) {
+        // Registration successful - navigate directly to customer dashboard
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Account created successfully! You are now signed in as a Customer.',
+            ),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 2),
+          ),
         );
 
-    // Check registration result
-    final authState = ref.read(authProvider);
-
-    if (authState.status == AuthStatus.authenticated) {
-      // Registration successful
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created successfully!'),
-          backgroundColor: AppColors.success,
-          duration: Duration(seconds: 2),
-        ),
-      );
-
-      // Navigate to role selection after a delay
-      await Future.delayed(const Duration(seconds: 2), () {
-        Navigator.pushReplacementNamed(context, '/role-selection');
-      });
-    } else if (authState.error != null) {
-      // Error is already shown in the UI via authState.error
-      // No need to show another snackbar
+        // Navigate to customer dashboard after a delay
+        await Future.delayed(const Duration(seconds: 2), () {
+          Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+        });
+      }
+    } catch (e) {
+      print("Registration error: $e");
     }
   }
 
