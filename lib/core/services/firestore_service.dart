@@ -5,7 +5,6 @@ class FirestoreService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Submit a new referral
   static Future<Map<String, dynamic>> submitReferral({
     required String referralName,
     required String referralEmail,
@@ -20,7 +19,6 @@ class FirestoreService {
         throw Exception('User not authenticated');
       }
 
-      // Get user data
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
       final userData = userDoc.data();
@@ -30,7 +28,6 @@ class FirestoreService {
           'Customer';
       final referralCode = userData?['referralCode'] ?? 'NONE';
 
-      // Create referral document
       final referralRef = _firestore.collection('referrals').doc();
       final referralId = referralRef.id;
 
@@ -46,18 +43,17 @@ class FirestoreService {
         'address': address.trim(),
         'serviceType': serviceType,
         'notes': notes?.trim() ?? '',
-        'status': 'pending', // pending, contacted, converted, rejected
-        'bugBucksAwarded': 100, // Configurable - we'll make this dynamic later
+        'status': 'pending',
+        'bugBucksAwarded': 100,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-        'assignedTo': null, // Will be assigned by admin
+        'assignedTo': null,
         'adminNotes': '',
         'convertedAt': null,
       };
 
       await referralRef.set(referralData);
 
-      // Award Bug Bucks to customer
       await _awardBugBucks(
         userId: user.uid,
         amount: 100,
@@ -66,10 +62,8 @@ class FirestoreService {
         referenceId: referralId,
       );
 
-      // Update user's referral count and Bug Bucks balance
       await _updateUserStats(userId: user.uid, bugBucksToAdd: 100);
 
-      // Create notification for admin
       await _createAdminNotification(
         title: 'New Referral Submitted',
         message: '$customerName submitted a referral for $referralName',
@@ -96,15 +90,13 @@ class FirestoreService {
     required String referenceId,
   }) async {
     try {
-      // Get current balance
       final userDoc = await _firestore.collection('users').doc(userId).get();
       final currentBalance = userDoc.data()?['bugBucks'] ?? 0;
       final newBalance = currentBalance + amount;
 
-      // Create transaction record
       await _firestore.collection('bugbucks_transactions').add({
         'userId': userId,
-        'type': type, // referral, adjustment, redemption, bonus
+        'type': type,
         'amount': amount,
         'description': description,
         'referenceId': referenceId,
@@ -141,13 +133,11 @@ class FirestoreService {
     required String referenceId,
   }) async {
     try {
-      // Get all admin users
       final adminsQuery = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'admin')
           .get();
 
-      // Create notification for each admin
       for (final adminDoc in adminsQuery.docs) {
         await _firestore.collection('notifications').add({
           'userId': adminDoc.id,
@@ -161,11 +151,9 @@ class FirestoreService {
       }
     } catch (e) {
       print('Error creating admin notification: $e');
-      // Don't rethrow - notification failure shouldn't fail the referral
     }
   }
 
-  // Get user's referral code (generate if doesn't exist)
   static Future<String> getUserReferralCode() async {
     try {
       final user = _auth.currentUser;
@@ -174,15 +162,12 @@ class FirestoreService {
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDoc.data();
 
-      // Check if user already has a referral code
       if (userData?['referralCode'] != null) {
         return userData!['referralCode'] as String;
       }
 
-      // Generate new referral code
       final referralCode = _generateReferralCode();
 
-      // Save to user document
       await _firestore.collection('users').doc(user.uid).update({
         'referralCode': referralCode,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -196,7 +181,6 @@ class FirestoreService {
   }
 
   static String _generateReferralCode() {
-    // Generate a unique referral code: DOWELL + 6 random alphanumeric characters
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final random = StringBuffer('DOWELL');
 

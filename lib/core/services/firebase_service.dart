@@ -3,15 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class FirebaseService {
-  // Initialize Firebase
   static Future<void> initialize() async {
     await Firebase.initializeApp();
 
-    // Optional: Initialize default settings
     await _initializeFirestoreData();
   }
 
-  // Initialize user data in Firestore
   static Future<void> _initializeFirestoreData() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -22,7 +19,6 @@ class FirebaseService {
         final userSnapshot = await userDoc.get();
 
         if (!userSnapshot.exists) {
-          // Create initial user document if it doesn't exist
           await userDoc.set({
             'email': user.email,
             'displayName':
@@ -41,11 +37,9 @@ class FirebaseService {
       }
     } catch (e) {
       print('❌ Error initializing user data: $e');
-      // Don't throw - this shouldn't prevent app startup
     }
   }
 
-  // Generate a referral code
   static String _generateReferralCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final random = StringBuffer('DOWELL');
@@ -59,7 +53,6 @@ class FirebaseService {
     return random.toString();
   }
 
-  // Optional: Initialize default app settings
   static Future<void> initializeAppSettings() async {
     try {
       final settingsRef = FirebaseFirestore.instance
@@ -71,7 +64,7 @@ class FirebaseService {
         await settingsRef.set({
           'bugBucksPerReferral': 100,
           'employeeBonusAmount': 50.00,
-          'nilAthleteCommissionRate': 0.15, // 15%
+          'nilAthleteCommissionRate': 0.15,
           'minimumWithdrawalAmount': 25.00,
           'updatedAt': FieldValue.serverTimestamp(),
         });

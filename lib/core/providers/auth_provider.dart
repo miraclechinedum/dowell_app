@@ -48,7 +48,6 @@ class AuthProvider extends StateNotifier<AuthState> {
         state = const AuthState(status: AuthStatus.unauthenticated);
       } else {
         try {
-          // Fetch user data from Firestore
           final userDoc = await FirebaseFirestore.instance
               .collection('users')
               .doc(user.uid)
@@ -68,7 +67,6 @@ class AuthProvider extends StateNotifier<AuthState> {
               needsVerification: needsVerification,
             );
           } else {
-            // User document doesn't exist, create one with default customer role
             await _createUserDocument(user.uid, user.email ?? '');
             state = AuthState(
               status: AuthStatus.authenticated,
@@ -82,7 +80,7 @@ class AuthProvider extends StateNotifier<AuthState> {
           state = AuthState(
             status: AuthStatus.authenticated,
             user: user,
-            userRole: 'customer', // Default fallback
+            userRole: 'customer',
             needsVerification: false,
           );
         }
@@ -101,7 +99,6 @@ class AuthProvider extends StateNotifier<AuthState> {
     });
   }
 
-  // SIMPLIFIED REGISTRATION - Only creates user, role is default 'customer'
   Future<void> registerWithEmail({
     required String email,
     required String password,
@@ -109,11 +106,9 @@ class AuthProvider extends StateNotifier<AuthState> {
     try {
       state = state.copyWith(status: AuthStatus.loading);
 
-      // Create user in Firebase Auth
       final userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: password);
 
-      // Create user document in Firestore with default customer role
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userCredential.user!.uid)
@@ -145,14 +140,12 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
-  // Request role upgrade
   Future<void> requestRoleUpgrade({
     required String requestedRole,
     required String userId,
     String? reason,
   }) async {
     try {
-      // Create role request document
       await FirebaseFirestore.instance.collection('role_requests').add({
         'userId': userId,
         'requestedRole': requestedRole,
@@ -163,7 +156,6 @@ class AuthProvider extends StateNotifier<AuthState> {
         'reviewedBy': null,
       });
 
-      // Update user document to show pending verification
       await FirebaseFirestore.instance.collection('users').doc(userId).update({
         'needsVerification': true,
         'requestedRole': requestedRole,
@@ -178,7 +170,6 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
-  // Admin: Approve role change
   Future<void> approveRoleChange({
     required String userId,
     required String newRole,
@@ -186,7 +177,6 @@ class AuthProvider extends StateNotifier<AuthState> {
     String? notes,
   }) async {
     try {
-      // Update user role
       await FirebaseFirestore.instance.collection('users').doc(userId).update({
         'role': newRole,
         'needsVerification': false,
@@ -198,7 +188,6 @@ class AuthProvider extends StateNotifier<AuthState> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Update role request status
       final requests = await FirebaseFirestore.instance
           .collection('role_requests')
           .where('userId', isEqualTo: userId)
@@ -221,14 +210,12 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
-  // Admin: Reject role change
   Future<void> rejectRoleChange({
     required String userId,
     required String adminId,
     String? reason,
   }) async {
     try {
-      // Update user document
       await FirebaseFirestore.instance.collection('users').doc(userId).update({
         'needsVerification': false,
         'requestedRole': null,
@@ -239,7 +226,6 @@ class AuthProvider extends StateNotifier<AuthState> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Update role request status
       final requests = await FirebaseFirestore.instance
           .collection('role_requests')
           .where('userId', isEqualTo: userId)
@@ -262,12 +248,10 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
-  // Update current user's role in state
   void updateUserRole(String role) {
     state = state.copyWith(userRole: role);
   }
 
-  // SIMPLIFIED LOGOUT
   Future<void> logout() async {
     try {
       await FirebaseAuth.instance.signOut();
@@ -278,9 +262,8 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
-  // Add this method to the AuthProvider class (after the logout method):
   Future<void> signOut() async {
-    return logout(); // Just call the existing logout method
+    return logout();
   }
 
   Future<void> loginWithEmail({
@@ -331,7 +314,6 @@ class AuthProvider extends StateNotifier<AuthState> {
   }
 }
 
-// PROVIDER
 final authProvider = StateNotifierProvider<AuthProvider, AuthState>((ref) {
   return AuthProvider();
 });

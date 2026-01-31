@@ -8,7 +8,7 @@ class AppTheme {
       primary: AppColors.primary,
       secondary: AppColors.accent,
       surface:
-          AppColors.background, // Use surface instead of deprecated background
+          AppColors.background, 
     ),
     fontFamily: 'Roboto',
     appBarTheme: const AppBarTheme(

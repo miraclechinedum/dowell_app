@@ -10,13 +10,21 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-    # Firebase Authentication
+  # Firebase
   firebase_core: ^3.7.0
   firebase_auth: ^5.3.0
   cloud_firestore: ^5.6.12
+  firebase_storage: ^12.4.10
   
   # State Management (Riverpod - easier than Provider)
   flutter_riverpod: ^2.4.9
+
+   # Image Picking
+  image_picker: ^1.0.4
+  
+  # Other utilities
+  cached_network_image: ^3.3.0
+  path_provider: ^2.1.0
   
   # Form validation
   form_validator: ^1.0.0
