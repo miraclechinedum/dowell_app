@@ -6,11 +6,16 @@ class FirebaseService {
   static Future<void> initialize() async {
     await Firebase.initializeApp();
 
+    await FirebaseAuth.instance.app.isAutomaticDataCollectionEnabled;
+
     await _initializeFirestoreData();
+    await initializeAppSettings();
   }
 
   static Future<void> _initializeFirestoreData() async {
     try {
+      await FirebaseAuth.instance.app.isAutomaticDataCollectionEnabled;
+
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         final userDoc = FirebaseFirestore.instance
@@ -41,16 +46,11 @@ class FirebaseService {
   }
 
   static String _generateReferralCode() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final random = StringBuffer('DOWELL');
-
-    for (int i = 0; i < 6; i++) {
-      random.write(
-        chars[(DateTime.now().microsecondsSinceEpoch + i) % chars.length],
-      );
-    }
-
-    return random.toString();
+    // Improved referral code generation
+    final random = DateTime.now().microsecondsSinceEpoch;
+    final code =
+        'DOWELL${random.toString().substring(random.toString().length - 6)}';
+    return code;
   }
 
   static Future<void> initializeAppSettings() async {
