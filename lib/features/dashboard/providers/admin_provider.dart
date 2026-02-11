@@ -74,11 +74,11 @@ class AdminProvider {
       }
 
       return AdminStats(
-        totalUsers: results[0].count,
-        pendingReferrals: results[1].count,
-        pendingTasks: results[2].count,
-        pendingRoleRequests: results[3].count,
-        totalRevenue: totalRevenue,
+        totalUsers: results[0].count ?? 0,
+        pendingReferrals: results[1].count ?? 0,
+        pendingTasks: results[2].count ?? 0,
+        pendingRoleRequests: results[3].count ?? 0,
+        totalRevenue: totalRevenue.toInt(),
       );
     } catch (e) {
       print('Error getting admin stats: $e');
@@ -154,13 +154,15 @@ class AdminProvider {
           .doc(referralId)
           .update(updateData);
 
+      // Get referral data for notification
+      final referralDoc = await _firestore
+          .collection('referrals')
+          .doc(referralId)
+          .get();
+      final referralData = referralDoc.data();
+
       // If converting, award additional Bug Bucks
       if (status == 'converted') {
-        final referralDoc = await _firestore
-            .collection('referrals')
-            .doc(referralId)
-            .get();
-        final referralData = referralDoc.data();
         final customerId = referralData?['customerId'];
         const conversionBonus = 500; // Additional Bug Bucks for conversion
 
@@ -459,3 +461,4 @@ final allUsersProvider = StreamProvider<QuerySnapshot>((ref) {
   final adminService = ref.watch(adminProvider);
   return adminService.getAllUsers();
 });
+
