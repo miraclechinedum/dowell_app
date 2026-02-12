@@ -2,7 +2,7 @@ name: dowell_app
 description: ""
 
 publish_to: 'none' 
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.10.1
@@ -36,6 +36,8 @@ dependencies:
   loading_animation_widget: ^1.2.0
 
   cupertino_icons: ^1.0.8
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_test:
@@ -47,3 +49,25 @@ flutter:
 
   assets:
     - assets/images/dowell_logo.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/dowell_logo.png"
+  min_sdk_android: 23
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/dowell_logo.png"
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/images/dowell_logo.png
+
+  android: true
+  ios: true
+  web: false
+
+  android_12:
+    color: "#FFFFFF"
+    image: assets/images/dowell_logo.png
+
