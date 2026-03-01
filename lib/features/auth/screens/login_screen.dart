@@ -6,7 +6,6 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/form_text_field.dart';
-import '../../../core/widgets/primary_button.dart';
 import '../../../core/providers/auth_provider.dart';
 import 'register_screen.dart';
 
@@ -26,6 +25,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   late AnimationController _cardController;
   late Animation<Offset> _cardSlide;
   late Animation<double> _cardFade;
+
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -65,29 +66,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
 
-    if (authState.status == AuthStatus.loading) {
-      return Scaffold(
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            CustomPaint(painter: _GreenBgPainter()),
-            Center(
-              child: LoadingAnimationWidget.staggeredDotsWave(
-                color: Colors.white,
-                size: 60,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return Scaffold(
-      // No appbar — we build our own header
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Green gradient background (same as splash) ───────────────────
+          // ── Green gradient background ────────────────────────────────────
           CustomPaint(painter: _GreenBgPainter()),
 
           // ── Header text ──────────────────────────────────────────────────
@@ -228,8 +211,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
-                                  onPressed: () =>
-                                      _showForgotPasswordDialog(context),
+                                  onPressed: _isLoading
+                                      ? null
+                                      : () =>
+                                            _showForgotPasswordDialog(context),
                                   style: TextButton.styleFrom(
                                     padding: EdgeInsets.zero,
                                     minimumSize: Size.zero,
@@ -249,17 +234,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                               const SizedBox(height: 32),
 
-                              // Sign in button — full width, green gradient pill
-                              SizedBox(
-                                width: double.infinity,
-                                child: PrimaryButton(
-                                  text: 'SIGN IN',
-                                  onPressed: () async {
-                                    if (_formKey.currentState!.validate()) {
-                                      await _login();
-                                    }
-                                  },
-                                ),
+                              // ── Sign In button with inline loader ────────
+                              _SignInButton(
+                                isLoading: _isLoading,
+                                onPressed: () async {
+                                  if (_formKey.currentState!.validate()) {
+                                    await _login();
+                                  }
+                                },
                               ),
 
                               const SizedBox(height: 36),
@@ -276,19 +258,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                     ),
                                   ),
                                   GestureDetector(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              const RegisterScreen(),
-                                        ),
-                                      );
-                                    },
-                                    child: const Text(
+                                    onTap: _isLoading
+                                        ? null
+                                        : () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    const RegisterScreen(),
+                                              ),
+                                            );
+                                          },
+                                    child: Text(
                                       'Sign up',
                                       style: TextStyle(
-                                        color: AppColors.primary,
+                                        color: _isLoading
+                                            ? AppColors.textNeutral
+                                            : AppColors.primary,
                                         fontWeight: FontWeight.w700,
                                         fontSize: 14,
                                       ),
@@ -312,13 +298,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Future<void> _login() async {
+    setState(() => _isLoading = true);
     ref.read(authProvider.notifier).clearError();
-    await ref
-        .read(authProvider.notifier)
-        .loginWithEmail(
-          email: emailController.text.trim(),
-          password: passwordController.text,
-        );
+
+    try {
+      await ref
+          .read(authProvider.notifier)
+          .loginWithEmail(
+            email: emailController.text.trim(),
+            password: passwordController.text,
+          );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _showForgotPasswordDialog(BuildContext context) {
@@ -467,13 +459,76 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 }
 
-// ─── Same green background painter as the splash screen ──────────────────────
+// ─── Sign In button with inline loading state ─────────────────────────────────
+class _SignInButton extends StatelessWidget {
+  final bool isLoading;
+  final VoidCallback onPressed;
+
+  const _SignInButton({required this.isLoading, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: isLoading
+              ? const LinearGradient(
+                  colors: [Color(0xFF4CAF50), Color(0xFF388E3C)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [Color(0xFF2E7D32), Color(0xFF4CAF50)],
+                ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: isLoading
+              ? []
+              : [
+                  BoxShadow(
+                    color: const Color(0xFF2E7D32).withOpacity(0.4),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+        ),
+        child: ElevatedButton(
+          onPressed: isLoading ? null : onPressed,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            disabledBackgroundColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          child: isLoading
+              ? LoadingAnimationWidget.staggeredDotsWave(
+                  color: Colors.white,
+                  size: 28,
+                )
+              : const Text(
+                  'SIGN IN',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Green background painter ─────────────────────────────────────────────────
 class _GreenBgPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
 
-    // Base gradient
     final bgPaint = Paint()
       ..shader = const LinearGradient(
         begin: Alignment.topLeft,
@@ -488,7 +543,6 @@ class _GreenBgPainter extends CustomPainter {
       ).createShader(rect);
     canvas.drawRect(rect, bgPaint);
 
-    // Subtle noise dots
     final rng = math.Random(42);
     final dotPaint = Paint()..color = Colors.white.withOpacity(0.025);
     for (int i = 0; i < 600; i++) {
@@ -497,7 +551,6 @@ class _GreenBgPainter extends CustomPainter {
       canvas.drawCircle(Offset(x, y), rng.nextDouble() * 1.8, dotPaint);
     }
 
-    // Radial highlight
     final cx = size.width / 2;
     final cy = size.height * 0.18;
     final highlightPaint = Paint()
@@ -509,7 +562,6 @@ class _GreenBgPainter extends CustomPainter {
           );
     canvas.drawCircle(Offset(cx, cy), size.width * 0.7, highlightPaint);
 
-    // Diagonal light streaks
     final streakPaint = Paint()
       ..color = Colors.white.withOpacity(0.03)
       ..strokeWidth = 80

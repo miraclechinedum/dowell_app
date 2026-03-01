@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/form_text_field.dart';
-import '../../../core/widgets/primary_button.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/widgets/privacy_policy_dialog.dart';
 
@@ -31,6 +30,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
   bool _termsAccepted = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
+  bool _isLoading = false;
 
   bool _hasMinLength = false;
   bool _hasUppercase = false;
@@ -58,7 +58,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
     ).drive(Tween(begin: 0.0, end: 1.0));
 
     _cardController.forward();
-
     _passwordController.addListener(_validatePassword);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -94,33 +93,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
       _hasSpecialChar;
 
   int get _metCount => [
-        _hasMinLength,
-        _hasUppercase,
-        _hasLowercase,
-        _hasNumber,
-        _hasSpecialChar,
-      ].where((v) => v).length;
+    _hasMinLength,
+    _hasUppercase,
+    _hasLowercase,
+    _hasNumber,
+    _hasSpecialChar,
+  ].where((v) => v).length;
 
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
-
-    if (authState.status == AuthStatus.loading) {
-      return Scaffold(
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            CustomPaint(painter: _GreenBgPainter()),
-            Center(
-              child: LoadingAnimationWidget.staggeredDotsWave(
-                color: Colors.white,
-                size: 60,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
 
     return Scaffold(
       body: Stack(
@@ -140,9 +122,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Back button
                     GestureDetector(
-                      onTap: () => Navigator.pop(context),
+                      onTap: _isLoading ? null : () => Navigator.pop(context),
                       child: Container(
                         width: 40,
                         height: 40,
@@ -220,14 +201,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.error_outline,
-                                    color: AppColors.error, size: 20),
+                                Icon(
+                                  Icons.error_outline,
+                                  color: AppColors.error,
+                                  size: 20,
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     authState.error!,
                                     style: TextStyle(
-                                        color: AppColors.error, fontSize: 13),
+                                      color: AppColors.error,
+                                      fontSize: 13,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -242,16 +228,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                               FormTextField(
                                 label: 'Email Address',
                                 hintText: 'you@example.com',
-                                prefixIcon:
-                                    const Icon(Icons.email_outlined),
+                                prefixIcon: const Icon(Icons.email_outlined),
                                 controller: _emailController,
                                 keyboardType: TextInputType.emailAddress,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
                                     return 'Please enter your email address';
                                   }
-                                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
-                                      .hasMatch(value)) {
+                                  if (!RegExp(
+                                    r'^[^@]+@[^@]+\.[^@]+',
+                                  ).hasMatch(value)) {
                                     return 'Please enter a valid email';
                                   }
                                   return null;
@@ -273,7 +259,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                     color: AppColors.textNeutral,
                                   ),
                                   onPressed: () => setState(
-                                      () => _showPassword = !_showPassword),
+                                    () => _showPassword = !_showPassword,
+                                  ),
                                 ),
                                 controller: _passwordController,
                                 obscureText: !_showPassword,
@@ -288,16 +275,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                 },
                               ),
 
-                              // ── Compact password strength indicator ──────
+                              // Compact strength indicator
                               if (_passwordController.text.isNotEmpty)
                                 Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(2, 10, 2, 4),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    2,
+                                    10,
+                                    2,
+                                    4,
+                                  ),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      // Progress bar
                                       Row(
                                         children: List.generate(5, (i) {
                                           final filled = i < _metCount;
@@ -313,12 +303,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                             child: Container(
                                               height: 4,
                                               margin: EdgeInsets.only(
-                                                  right: i < 4 ? 4 : 0),
+                                                right: i < 4 ? 4 : 0,
+                                              ),
                                               decoration: BoxDecoration(
                                                 color: filled
                                                     ? barColor
-                                                    : Colors.grey
-                                                        .withOpacity(0.25),
+                                                    : Colors.grey.withOpacity(
+                                                        0.25,
+                                                      ),
                                                 borderRadius:
                                                     BorderRadius.circular(4),
                                               ),
@@ -327,7 +319,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                         }),
                                       ),
                                       const SizedBox(height: 8),
-                                      // Inline requirement chips
                                       Wrap(
                                         spacing: 6,
                                         runSpacing: 6,
@@ -357,9 +348,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                         : Icons.visibility_off,
                                     color: AppColors.textNeutral,
                                   ),
-                                  onPressed: () => setState(() =>
-                                      _showConfirmPassword =
-                                          !_showConfirmPassword),
+                                  onPressed: () => setState(
+                                    () => _showConfirmPassword =
+                                        !_showConfirmPassword,
+                                  ),
                                 ),
                                 controller: _confirmPasswordController,
                                 obscureText: !_showConfirmPassword,
@@ -389,20 +381,26 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                 ),
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 8),
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
                                   child: Row(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.center,
                                     children: [
                                       Checkbox(
                                         value: _termsAccepted,
-                                        onChanged: (value) => setState(
-                                            () => _termsAccepted =
-                                                value ?? false),
+                                        onChanged: _isLoading
+                                            ? null
+                                            : (value) => setState(
+                                                () => _termsAccepted =
+                                                    value ?? false,
+                                              ),
                                         activeColor: AppColors.primary,
                                         shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(4),
+                                          borderRadius: BorderRadius.circular(
+                                            4,
+                                          ),
                                         ),
                                       ),
                                       Expanded(
@@ -415,10 +413,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                             ),
                                             children: [
                                               const TextSpan(
-                                                  text: 'I agree to the '),
+                                                text: 'I agree to the ',
+                                              ),
                                               WidgetSpan(
                                                 child: GestureDetector(
-                                                  onTap: _showTermsDialog,
+                                                  onTap: _isLoading
+                                                      ? null
+                                                      : _showTermsDialog,
                                                   child: const Text(
                                                     'Terms of Service',
                                                     style: TextStyle(
@@ -435,7 +436,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                               const TextSpan(text: ' and '),
                                               WidgetSpan(
                                                 child: GestureDetector(
-                                                  onTap: _showPrivacyPolicy,
+                                                  onTap: _isLoading
+                                                      ? null
+                                                      : _showPrivacyPolicy,
                                                   child: const Text(
                                                     'Privacy Policy',
                                                     style: TextStyle(
@@ -460,20 +463,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
 
                               const SizedBox(height: 28),
 
-                              // Create Account button
-                              SizedBox(
-                                width: double.infinity,
-                                child: PrimaryButton(
-                                  text: 'CREATE ACCOUNT',
-                                  onPressed: _termsAccepted
-                                      ? () {
-                                          if (_formKey.currentState!
-                                              .validate()) {
-                                            _register(context);
-                                          }
-                                        }
-                                      : null,
-                                ),
+                              // ── Create Account button with inline loader ──
+                              _CreateAccountButton(
+                                isLoading: _isLoading,
+                                enabled: _termsAccepted,
+                                onPressed: () {
+                                  if (_formKey.currentState!.validate()) {
+                                    _register(context);
+                                  }
+                                },
                               ),
 
                               const SizedBox(height: 28),
@@ -490,11 +488,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                     ),
                                   ),
                                   GestureDetector(
-                                    onTap: () => Navigator.pop(context),
-                                    child: const Text(
+                                    onTap: _isLoading
+                                        ? null
+                                        : () => Navigator.pop(context),
+                                    child: Text(
                                       'Sign in',
                                       style: TextStyle(
-                                        color: AppColors.primary,
+                                        color: _isLoading
+                                            ? AppColors.textNeutral
+                                            : AppColors.primary,
                                         fontWeight: FontWeight.w700,
                                         fontSize: 14,
                                       ),
@@ -517,7 +519,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
     );
   }
 
-  // Compact requirement chip
   Widget _chip(String label, bool met) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -670,18 +671,10 @@ Website: https://www.dowellpestcontrol.com
   }
 
   Future<void> _register(BuildContext context) async {
+    setState(() => _isLoading = true);
+
     final email = _emailController.text.trim();
     final password = _passwordController.text;
-
-    if (!_termsAccepted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please accept the Terms and Privacy Policy'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
 
     ref.read(authProvider.notifier).clearError();
 
@@ -692,7 +685,7 @@ Website: https://www.dowellpestcontrol.com
 
       final authState = ref.read(authProvider);
 
-      if (authState.status == AuthStatus.authenticated) {
+      if (authState.status == AuthStatus.authenticated && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -709,11 +702,87 @@ Website: https://www.dowellpestcontrol.com
       }
     } catch (e) {
       debugPrint('Registration error: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 }
 
-// ─── Same green background painter as login & splash ─────────────────────────
+// ─── Create Account button with inline loading state ─────────────────────────
+class _CreateAccountButton extends StatelessWidget {
+  final bool isLoading;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  const _CreateAccountButton({
+    required this.isLoading,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool active = enabled && !isLoading;
+
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: active
+              ? const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [Color(0xFF2E7D32), Color(0xFF4CAF50)],
+                )
+              : LinearGradient(
+                  colors: [
+                    const Color(0xFF2E7D32).withOpacity(0.5),
+                    const Color(0xFF4CAF50).withOpacity(0.5),
+                  ],
+                ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF2E7D32).withOpacity(0.4),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : [],
+        ),
+        child: ElevatedButton(
+          onPressed: active ? onPressed : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            disabledBackgroundColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          child: isLoading
+              ? LoadingAnimationWidget.staggeredDotsWave(
+                  color: Colors.white,
+                  size: 28,
+                )
+              : const Text(
+                  'CREATE ACCOUNT',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Green background painter ─────────────────────────────────────────────────
 class _GreenBgPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -744,14 +813,12 @@ class _GreenBgPainter extends CustomPainter {
     final cx = size.width / 2;
     final cy = size.height * 0.18;
     final highlightPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Colors.white.withOpacity(0.10),
-          Colors.transparent,
-        ],
-      ).createShader(
-        Rect.fromCircle(center: Offset(cx, cy), radius: size.width * 0.7),
-      );
+      ..shader =
+          RadialGradient(
+            colors: [Colors.white.withOpacity(0.10), Colors.transparent],
+          ).createShader(
+            Rect.fromCircle(center: Offset(cx, cy), radius: size.width * 0.7),
+          );
     canvas.drawCircle(Offset(cx, cy), size.width * 0.7, highlightPaint);
 
     final streakPaint = Paint()
