@@ -23,6 +23,11 @@ dependencies:
   loading_animation_widget: ^1.2.0
   cupertino_icons: ^1.0.8
   flutter_native_splash: ^2.4.7
+  logger: ^2.0.2+1
+  flutter_vector_icons: ^2.0.0
+
+
+
 
 dev_dependencies:
   flutter_test:

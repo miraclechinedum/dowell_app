@@ -1,9 +1,9 @@
+// lib/main.dart
 import 'package:dowell_app/firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-import 'core/services/firebase_service.dart';
 import 'core/navigation/auth_wrapper.dart';
 
 import 'features/auth/screens/login_screen.dart';
@@ -31,12 +31,8 @@ import 'features/dashboard/screens/employee/employee_submit_task_screen.dart';
 import 'features/dashboard/screens/employee/employee_tasks_list_screen.dart';
 import 'features/dashboard/screens/employee/employee_cashout_screen.dart';
 
-import 'core/providers/auth_provider.dart';
-import 'core/services/employee_service.dart';
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const ProviderScope(child: MyApp()));
 }
@@ -51,7 +47,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         fontFamily: 'Roboto',
         primaryColor: const Color(0xFF2E7D32),
-        scaffoldBackgroundColor: const Color(0xFFFDFAF6),
+        // ⚠️  Set to transparent so the splash painter's green shows through.
+        //     Previously this white background was overriding the splash.
+        scaffoldBackgroundColor: Colors.transparent,
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
           elevation: 0,
@@ -68,26 +66,30 @@ class MyApp extends StatelessWidget {
           secondary: const Color(0xFF4CAF50),
         ),
       ),
-      initialRoute: '/',
+      home: const AuthWrapper(),
       routes: {
-        '/': (context) => const AuthWrapper(),
+        // Auth Routes
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
         '/role-request': (context) => const RoleRequestScreen(),
         '/pending-approval': (context) => const PendingApprovalScreen(),
 
+        // Customer Routes
         '/customer/dashboard': (context) => const CustomerDashboardScreen(),
         '/submit-referral': (context) => const SubmitReferralScreen(),
         '/referrals': (context) => const ReferralsListScreen(),
 
+        // Employee Routes
         '/employee/dashboard': (context) => const EmployeeDashboardScreen(),
         '/employee/submit-task': (context) => const SubmitTaskScreen(),
         '/employee/tasks': (context) => const EmployeeTasksListScreen(),
         '/employee/cashout': (context) => const EmployeeCashoutScreen(),
 
+        // NIL Athlete Routes
         '/nil-athlete/dashboard': (context) =>
             const NilAthleteDashboardScreen(),
 
+        // Admin Routes
         '/admin/dashboard': (context) => const AdminDashboardScreen(),
         '/admin/users': (context) => const AdminUserManagementScreen(),
         '/admin/referrals': (context) => const AdminReferralApprovalScreen(),

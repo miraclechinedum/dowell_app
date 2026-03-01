@@ -1,27 +1,46 @@
+// lib/core/navigation/auth_wrapper.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../providers/auth_provider.dart';
-
+import '../screens/splash_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
-
 import '../../features/dashboard/screens/customer_dashboard.dart';
 import '../../features/dashboard/screens/employee_dashboard.dart';
 import '../../features/dashboard/screens/nil_athlete_dashboard.dart';
 import '../../features/dashboard/screens/admin_dashboard.dart';
-
 import '../../features/auth/screens/pending_approval_screen.dart';
 
-class AuthWrapper extends ConsumerWidget {
+class AuthWrapper extends ConsumerStatefulWidget {
   const AuthWrapper({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends ConsumerState<AuthWrapper> {
+  bool _splashComplete = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Show splash for exactly 5 seconds
+    Future.delayed(const Duration(milliseconds: 5000), () {
+      if (mounted) {
+        setState(() => _splashComplete = true);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
 
-    if (authState.status == AuthStatus.loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    // Show splash if the 5s hasn't elapsed OR auth is still loading
+    if (!_splashComplete || authState.status == AuthStatus.loading) {
+      return const SplashScreen();
     }
+
+    // ── Auth resolved — route accordingly ────────────────────────────────────
 
     if (authState.status == AuthStatus.unauthenticated ||
         authState.user == null) {
@@ -32,23 +51,17 @@ class AuthWrapper extends ConsumerWidget {
       return const PendingApprovalScreen();
     }
 
-    Widget dashboard;
     switch (authState.userRole) {
       case 'admin':
-        dashboard = const AdminDashboardScreen();
-        break;
+        return const AdminDashboardScreen();
       case 'employee':
-        dashboard = const EmployeeDashboardScreen();
-        break;
+        return const EmployeeDashboardScreen();
       case 'nil_athlete':
-        dashboard = const NilAthleteDashboardScreen();
-        break;
+      case 'nilAthlete':
+        return const NilAthleteDashboardScreen();
       case 'customer':
       default:
-        dashboard = const CustomerDashboardScreen();
-        break;
+        return const CustomerDashboardScreen();
     }
-
-    return dashboard;
   }
 }
