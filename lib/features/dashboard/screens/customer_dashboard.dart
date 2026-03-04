@@ -1,14 +1,15 @@
+// lib/features/dashboard/screens/customer_dashboard.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/primary_button.dart';
 
-// Import customer screens
 import './customer/submit_referral_screen.dart';
 import './customer/referrals_list_screen.dart';
 
@@ -22,19 +23,66 @@ class CustomerDashboardScreen extends ConsumerStatefulWidget {
 
 class _CustomerDashboardScreenState
     extends ConsumerState<CustomerDashboardScreen> {
+  int _pendingReferrals = 0;
+  int _convertedReferrals = 0;
+  double _totalEarned = 0;
+  bool _statsLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReferralStats();
+  }
+
+  Future<void> _loadReferralStats() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('referrals')
+          .where('referrerId', isEqualTo: uid)
+          .get();
+
+      int pending = 0;
+      int converted = 0;
+      double earned = 0;
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ?? 'pending';
+        final bugBucks = (data['bugBucksEarned'] as num?)?.toDouble() ?? 0;
+        if (status == 'pending') pending++;
+        if (status == 'converted') {
+          converted++;
+          earned += bugBucks;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _pendingReferrals = pending;
+          _convertedReferrals = converted;
+          _totalEarned = earned;
+          _statsLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _statsLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
     final user = authState.user;
 
     final userEmail = user?.email ?? 'Customer';
-    final userName = user?.displayName ?? userEmail.split('@').first;
+    final userName = (user?.fullName.isNotEmpty == true)
+        ? user!.fullName
+        : userEmail.split('@').first;
 
-    // Mock data
-    final bugBucks = 1250;
-    final pendingReferrals = 2;
-    const convertedReferrals = 8;
-    const totalEarned = 2500;
+    // Real wallet balance from Firestore — 0.0 for new accounts
+    final bugBucks = user?.walletBalance ?? 0.0;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -55,7 +103,7 @@ class _CustomerDashboardScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              /// Welcome Header
+              // Welcome Header
               AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,7 +163,7 @@ class _CustomerDashboardScreenState
 
               const SizedBox(height: 20),
 
-              /// Role Upgrade Request Card
+              // Role Upgrade Card
               AppCard(
                 child: Column(
                   children: [
@@ -147,7 +195,7 @@ class _CustomerDashboardScreenState
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        side: BorderSide(color: AppColors.primary),
+                        side: const BorderSide(color: AppColors.primary),
                       ),
                       child: const Text(
                         'Request Role Upgrade',
@@ -163,7 +211,7 @@ class _CustomerDashboardScreenState
 
               const SizedBox(height: 20),
 
-              /// Bug Bucks Balance - FIXED LAYOUT
+              // Bug Bucks Balance
               AppCard(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,47 +224,42 @@ class _CustomerDashboardScreenState
                       ),
                     ),
                     const SizedBox(height: 8),
-                    // FIX: Wrap the Row in a Container with constraints
-                    Container(
-                      constraints: const BoxConstraints(
-                        maxWidth: double.infinity,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  bugBucks.toString(),
-                                  style: const TextStyle(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
-                                  ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                bugBucks == bugBucks.truncateToDouble()
+                                    ? bugBucks.toInt().toString()
+                                    : bugBucks.toStringAsFixed(2),
+                                style: const TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary,
                                 ),
-                                Text(
-                                  'Bug Bucks',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary,
-                                  ),
+                              ),
+                              const Text(
+                                'Bug Bucks',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.primary,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          // FIX: Give the button a fixed width or use IntrinsicWidth
-                          SizedBox(
-                            width: 120, // Fixed width for the button
-                            child: PrimaryButton(
-                              text: 'Redeem',
-                              onPressed: () => _showRedeemDialog(context),
-                            ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 120,
+                          child: PrimaryButton(
+                            text: 'Redeem',
+                            onPressed: () => _goToWallet(context),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     const Text(
@@ -232,127 +275,140 @@ class _CustomerDashboardScreenState
 
               const SizedBox(height: 20),
 
-              /// Quick Stats
-              Row(
-                children: [
-                  Expanded(
-                    child: AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Pending',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textNeutral,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            pendingReferrals.toString(),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
+              // Quick Stats
+              _statsLoading
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: CircularProgressIndicator(),
                       ),
+                    )
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: AppCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Pending',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.textNeutral,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _pendingReferrals.toString(),
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: AppCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Converted',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.textNeutral,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _convertedReferrals.toString(),
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.success,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: AppCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Total Earned',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.textNeutral,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '\$${_totalEarned.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Converted',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textNeutral,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            convertedReferrals.toString(),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.success,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Total Earned',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textNeutral,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '\$$totalEarned',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
 
               const SizedBox(height: 20),
 
-              /// Action Buttons
+              // Action Buttons
               Column(
                 children: [
-                  // Submit New Referral Button
                   PrimaryButton(
                     text: 'Submit New Referral',
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SubmitReferralScreen(),
-                      ),
-                    ),
+                    onPressed: () =>
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const SubmitReferralScreen(),
+                          ),
+                        ).then((_) {
+                          _loadReferralStats();
+                          ref.read(authProvider.notifier).reloadUser();
+                        }),
                   ),
-
                   const SizedBox(height: 12),
-
-                  // View Referrals Button
-                  OutlinedButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ReferralsListScreen(),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ReferralsListScreen(),
+                        ),
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        side: const BorderSide(color: AppColors.primary),
                       ),
-                      side: BorderSide(color: AppColors.primary),
-                    ),
-                    child: const Text(
-                      'View My Referrals',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
+                      child: const Text(
+                        'View My Referrals',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -369,24 +425,13 @@ class _CustomerDashboardScreenState
 
   Future<void> _logoutUser(BuildContext context) async {
     try {
-      print("🚀 Starting logout process...");
-
-      // Sign out from Firebase
       await FirebaseAuth.instance.signOut();
-      print("✅ Firebase signOut successful");
-
-      // Add a small delay before navigation
       await Future.delayed(const Duration(milliseconds: 100));
-
-      // Navigate to login screen
       Navigator.of(
         context,
         rootNavigator: true,
       ).pushNamedAndRemoveUntil('/login', (route) => false);
-      print("✅ Navigation to login initiated");
     } catch (e) {
-      print("❌ Logout error: $e");
-      // Even on error, try to navigate to login
       Navigator.of(
         context,
         rootNavigator: true,
@@ -394,23 +439,8 @@ class _CustomerDashboardScreenState
     }
   }
 
-  void _showRedeemDialog(BuildContext context) {
-    // Use a post-frame callback to ensure widget is fully built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Redeem Bug Bucks'),
-          content: const Text('Redemption coming soon'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
-    });
+  void _goToWallet(BuildContext context) {
+    Navigator.pushNamed(context, '/customer/wallet');
   }
 
   void _navigateToRoleRequest(BuildContext context) {

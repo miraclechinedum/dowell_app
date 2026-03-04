@@ -1,5 +1,5 @@
 // lib/core/providers/auth_provider.dart
-import 'package:flutter/material.dart';
+import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,7 +14,7 @@ enum AuthStatus { initial, authenticated, unauthenticated, loading, error }
 
 class AuthState {
   final AuthStatus status;
-  final AppUser? user;
+  final UserModel? user;
   final String? error;
   final bool isEmailVerified;
   final bool isLoading;
@@ -29,7 +29,7 @@ class AuthState {
 
   AuthState copyWith({
     AuthStatus? status,
-    AppUser? user,
+    UserModel? user,
     String? error,
     bool? isEmailVerified,
     bool? isLoading,
@@ -47,7 +47,13 @@ class AuthState {
   bool get hasError => error != null;
   UserRole? get userRole => user?.role;
   String? get userId => user?.id;
-  bool get needsVerification => user?.needsVerification ?? false;
+
+  // needsVerification: non-customer roles that aren't approved yet
+  bool get needsVerification =>
+      user != null &&
+      user!.role != UserRole.customer &&
+      user!.role != UserRole.admin &&
+      !user!.isApproved;
 }
 
 class AuthProvider extends StateNotifier<AuthState> {
@@ -93,25 +99,22 @@ class AuthProvider extends StateNotifier<AuthState> {
     try {
       state = state.copyWith(isLoading: true);
 
-      // Check email verification
       await firebaseUser.reload();
       final isEmailVerified = firebaseUser.emailVerified;
 
-      // Get or create user document
-      final appUser = await _getOrCreateUserDocument(firebaseUser);
+      final userModel = await _getOrCreateUserDocument(firebaseUser);
 
-      // Log authentication event
-      _analytics.logLogin(userId: appUser.id, role: appUser.role.value);
+      _analytics.logLogin(userId: userModel.id, role: userModel.role.name);
 
       state = state.copyWith(
         status: AuthStatus.authenticated,
-        user: appUser,
+        user: userModel,
         isEmailVerified: isEmailVerified,
         isLoading: false,
         error: null,
       );
 
-      logger.i('User authenticated successfully: ${appUser.id}');
+      logger.i('User authenticated successfully: ${userModel.id}');
     } catch (e, stackTrace) {
       logger.e(
         'Error handling authenticated user',
@@ -122,28 +125,44 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
-  Future<AppUser> _getOrCreateUserDocument(User firebaseUser) async {
+  Future<UserModel> _getOrCreateUserDocument(User firebaseUser) async {
     final userRef = _firestore.collection('users').doc(firebaseUser.uid);
     final userDoc = await userRef.get();
 
     if (userDoc.exists) {
-      // Update last login time
       await userRef.update({
         'lastLoginAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
-
-      return AppUser.fromFirestore(userDoc);
+      return UserModel.fromMap(
+        userDoc.data() as Map<String, dynamic>,
+        userDoc.id,
+      );
     } else {
-      // Create new user document
-      final newUser = AppUser.createNew(
+      final newUser = UserModel(
         id: firebaseUser.uid,
-        email: firebaseUser.email!,
-        displayName: firebaseUser.displayName,
-        photoUrl: firebaseUser.photoURL,
+        email: firebaseUser.email ?? '',
+        fullName:
+            firebaseUser.displayName ??
+            firebaseUser.email?.split('@').first ??
+            '',
+        phoneNumber: '',
+        role: UserRole.customer,
+        isApproved: true,
+        createdAt: DateTime.now(),
+        walletBalance: 0.0,
+        referralCode: _generateReferralCode(
+          firebaseUser.displayName ??
+              firebaseUser.email?.split('@').first ??
+              'U',
+        ),
       );
 
-      await userRef.set(newUser.toFirestore());
+      await userRef.set({
+        ...newUser.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
       return newUser;
     }
   }
@@ -153,10 +172,10 @@ class AuthProvider extends StateNotifier<AuthState> {
     logger.i('User unauthenticated');
   }
 
-  void _updateStateError(String error) {
+  void _updateStateError(String message) {
     state = state.copyWith(
       status: AuthStatus.error,
-      error: error,
+      error: message,
       isLoading: false,
     );
   }
@@ -172,16 +191,18 @@ class AuthProvider extends StateNotifier<AuthState> {
     try {
       state = state.copyWith(isLoading: true, error: null);
 
-      // Validate inputs
       if (!_isValidEmail(email)) {
-        return const AuthResult.error('Invalid email format');
+        state = state.copyWith(isLoading: false);
+        return const AuthResult.error('Please enter a valid email address.');
       }
 
       if (!_isValidPassword(password)) {
-        return const AuthResult.error('Password must be at least 6 characters');
+        state = state.copyWith(isLoading: false);
+        return const AuthResult.error(
+          'Password must be at least 6 characters.',
+        );
       }
 
-      // Create user in Firebase Auth
       final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
@@ -189,55 +210,53 @@ class AuthProvider extends StateNotifier<AuthState> {
 
       final firebaseUser = userCredential.user!;
 
-      // Send email verification
       await firebaseUser.sendEmailVerification();
 
-      // Update display name if provided
       if (displayName != null && displayName.isNotEmpty) {
         await firebaseUser.updateDisplayName(displayName);
         await firebaseUser.reload();
       }
 
-      // Determine role (default to customer if not specified)
       final role = selectedRole ?? UserRole.customer;
+      final name = displayName ?? email.split('@').first;
+      final isApproved = role == UserRole.customer || role == UserRole.admin;
 
-      // Create user document in Firestore with selected role
-      final appUser = AppUser.createNew(
+      final newUser = UserModel(
         id: firebaseUser.uid,
-        email: email,
-        displayName: displayName ?? email.split('@').first,
+        email: email.trim(),
+        fullName: name,
+        phoneNumber: '',
         role: role,
-        photoUrl: firebaseUser.photoURL,
+        isApproved: isApproved,
+        createdAt: DateTime.now(),
+        walletBalance: 0.0,
+        referralCode: _generateReferralCode(name),
       );
 
-      await _firestore
-          .collection('users')
-          .doc(firebaseUser.uid)
-          .set(appUser.toFirestore());
+      await _firestore.collection('users').doc(firebaseUser.uid).set({
+        ...newUser.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-      // Log registration event
-      _analytics.logSignUp(method: 'email', role: role.value);
+      _analytics.logSignUp(method: 'email', role: role.name);
 
-      // Create role verification request if needed
-      if (role.requiresVerification) {
+      if (role == UserRole.employee || role == UserRole.athlete) {
         await _createRoleVerificationRequest(
           userId: firebaseUser.uid,
-          requestedRole: role.value,
+          requestedRole: role.name,
         );
       }
 
-      // Update state
-      state = state.copyWith(
-        status: AuthStatus.authenticated,
-        user: appUser,
-        isEmailVerified: false,
-        isLoading: false,
-      );
+      // Sign out immediately after registration.
+      // The user must verify their email then log in manually.
+      // AuthWrapper will see unauthenticated state and show LoginScreen.
+      await _firebaseAuth.signOut();
+
+      state = const AuthState(status: AuthStatus.unauthenticated);
 
       logger.i('User registered successfully: ${firebaseUser.uid}');
-
       return const AuthResult.success(
-        'Registration successful! Please verify your email.',
+        'Registration successful! Please verify your email, then sign in.',
       );
     } on FirebaseAuthException catch (e) {
       logger.w('Firebase auth error during registration', error: e);
@@ -262,17 +281,22 @@ class AuthProvider extends StateNotifier<AuthState> {
         password: password,
       );
 
-      // Check if email is verified
       await userCredential.user?.reload();
       final isVerified = userCredential.user?.emailVerified ?? false;
 
       if (!isVerified) {
-        // Option to resend verification email
+        // Resend verification link then sign back out immediately.
+        // This stops Firebase authStateChanges from routing the user into
+        // the app and ensures AuthWrapper stays on LoginScreen.
         await userCredential.user?.sendEmailVerification();
-        state = state.copyWith(isLoading: false);
-        return const AuthResult.warning(
-          'Email not verified. A new verification email has been sent.',
-        );
+        await _firebaseAuth.signOut();
+        final msg =
+            "Your email address hasn't been verified yet. "
+            'We just re-sent a verification link to ${email.trim()} — '
+            'please check your inbox (and spam folder), tap the link, '
+            'then come back and sign in.';
+        state = state.copyWith(isLoading: false, error: msg);
+        return AuthResult.error(msg);
       }
 
       logger.i('User logged in successfully: ${userCredential.user?.uid}');
@@ -280,26 +304,24 @@ class AuthProvider extends StateNotifier<AuthState> {
       return const AuthResult.success('Login successful!');
     } on FirebaseAuthException catch (e) {
       logger.w('Firebase auth error during login', error: e);
-      state = state.copyWith(isLoading: false);
-      return AuthResult.error(_getFirebaseErrorMessage(e.code));
+      final message = _getFirebaseErrorMessage(e.code);
+      state = state.copyWith(isLoading: false, error: message);
+      return AuthResult.error(message);
     } catch (e) {
       logger.e('Unexpected error during login', error: e);
-      state = state.copyWith(isLoading: false);
-      return AuthResult.error('An unexpected error occurred: ${e.toString()}');
+      final message = 'An unexpected error occurred. Please try again.';
+      state = state.copyWith(isLoading: false, error: message);
+      return AuthResult.error(message);
     }
   }
 
   Future<void> logout() async {
     try {
       state = state.copyWith(isLoading: true);
-
-      // Log logout event
       if (state.user != null) {
         _analytics.logLogout(userId: state.user!.id);
       }
-
       await _firebaseAuth.signOut();
-
       logger.i('User logged out successfully');
     } catch (e) {
       logger.e('Error during logout', error: e);
@@ -308,20 +330,25 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
-  // Alias for logout to maintain compatibility
-  Future<void> signOut() async {
-    return logout();
-  }
+  Future<void> signOut() async => logout();
 
   Future<AuthResult> resetPassword(String email) async {
     try {
       state = state.copyWith(isLoading: true);
 
-      // Check if user exists first
-      final methods = await _firebaseAuth.fetchSignInMethodsForEmail(email);
+      if (!_isValidEmail(email.trim())) {
+        state = state.copyWith(isLoading: false);
+        return const AuthResult.error('Please enter a valid email address.');
+      }
+
+      final methods = await _firebaseAuth.fetchSignInMethodsForEmail(
+        email.trim(),
+      );
       if (methods.isEmpty) {
         state = state.copyWith(isLoading: false);
-        return const AuthResult.error('No account found with this email');
+        return const AuthResult.error(
+          'No account found with this email address.',
+        );
       }
 
       await _firebaseAuth.sendPasswordResetEmail(email: email.trim());
@@ -338,7 +365,7 @@ class AuthProvider extends StateNotifier<AuthState> {
     } catch (e) {
       logger.e('Unexpected error during password reset', error: e);
       state = state.copyWith(isLoading: false);
-      return AuthResult.error('Failed to send reset email: ${e.toString()}');
+      return AuthResult.error('Failed to send reset email. Please try again.');
     }
   }
 
@@ -352,18 +379,15 @@ class AuthProvider extends StateNotifier<AuthState> {
       final user = _firebaseAuth.currentUser;
       if (user == null) {
         state = state.copyWith(isLoading: false);
-        return const AuthResult.error('No user logged in');
+        return const AuthResult.error('No user is currently signed in.');
       }
 
-      // Re-authenticate user
       final credential = EmailAuthProvider.credential(
         email: user.email!,
         password: currentPassword,
       );
 
       await user.reauthenticateWithCredential(credential);
-
-      // Change password
       await user.updatePassword(newPassword);
 
       logger.i('Password changed successfully for: ${user.email}');
@@ -372,15 +396,16 @@ class AuthProvider extends StateNotifier<AuthState> {
     } on FirebaseAuthException catch (e) {
       logger.w('Error changing password', error: e);
       state = state.copyWith(isLoading: false);
-
-      if (e.code == 'wrong-password') {
-        return const AuthResult.error('Current password is incorrect');
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        return const AuthResult.error(
+          'Your current password is incorrect. Please try again.',
+        );
       }
       return AuthResult.error(_getFirebaseErrorMessage(e.code));
     } catch (e) {
       logger.e('Unexpected error changing password', error: e);
       state = state.copyWith(isLoading: false);
-      return AuthResult.error('Failed to change password: ${e.toString()}');
+      return AuthResult.error('Failed to change password. Please try again.');
     }
   }
 
@@ -394,10 +419,9 @@ class AuthProvider extends StateNotifier<AuthState> {
       final user = _firebaseAuth.currentUser;
       if (user == null) {
         state = state.copyWith(isLoading: false);
-        return const AuthResult.error('No user logged in');
+        return const AuthResult.error('No user is currently signed in.');
       }
 
-      // Check if already has pending request
       final existingRequest = await _firestore
           .collection('role_requests')
           .where('userId', isEqualTo: user.uid)
@@ -408,36 +432,33 @@ class AuthProvider extends StateNotifier<AuthState> {
       if (existingRequest.docs.isNotEmpty) {
         state = state.copyWith(isLoading: false);
         return const AuthResult.warning(
-          'You already have a pending role request',
+          'You already have a pending role request. Please wait for admin review.',
         );
       }
 
-      // Create role request
       await _createRoleVerificationRequest(
         userId: user.uid,
-        requestedRole: requestedRole.value,
+        requestedRole: requestedRole.name,
         reason: reason,
       );
 
-      // Update user document
       await _firestore.collection('users').doc(user.uid).update({
-        'needsVerification': true,
-        'requestedRole': requestedRole.value,
+        'requestedRole': requestedRole.name,
         'requestStatus': 'pending',
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      logger.i('Role upgrade requested: ${user.uid} -> $requestedRole');
+      logger.i('Role upgrade requested: ${user.uid} -> ${requestedRole.name}');
       state = state.copyWith(isLoading: false);
 
       return const AuthResult.success(
-        'Role upgrade requested successfully. Admin will review your request.',
+        'Role upgrade requested successfully. An admin will review your request.',
       );
     } catch (e) {
       logger.e('Error requesting role upgrade', error: e);
       state = state.copyWith(isLoading: false);
       return AuthResult.error(
-        'Failed to request role upgrade: ${e.toString()}',
+        'Failed to request role upgrade. Please try again.',
       );
     }
   }
@@ -464,16 +485,18 @@ class AuthProvider extends StateNotifier<AuthState> {
     try {
       final user = _firebaseAuth.currentUser;
       if (user == null) {
-        return const AuthResult.error('No user logged in');
+        return const AuthResult.error('No user is currently signed in.');
       }
-
       await user.sendEmailVerification();
-
       logger.i('Verification email sent to: ${user.email}');
-      return const AuthResult.success('Verification email sent!');
+      return const AuthResult.success(
+        'Verification email sent! Please check your inbox.',
+      );
     } catch (e) {
       logger.e('Error sending verification email', error: e);
-      return const AuthResult.error('Failed to send verification email');
+      return const AuthResult.error(
+        'Failed to send verification email. Please try again.',
+      );
     }
   }
 
@@ -486,10 +509,7 @@ class AuthProvider extends StateNotifier<AuthState> {
       final isVerified = user.emailVerified;
 
       if (isVerified && !state.isEmailVerified) {
-        // Update local state
         state = state.copyWith(isEmailVerified: true);
-
-        // Update user document
         await _firestore.collection('users').doc(user.uid).update({
           'emailVerified': true,
           'emailVerifiedAt': FieldValue.serverTimestamp(),
@@ -503,44 +523,29 @@ class AuthProvider extends StateNotifier<AuthState> {
     }
   }
 
+  /// Re-fetches the user document from Firestore and updates state.
+  Future<void> reloadUser() async {
+    final uid = _firebaseAuth.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      if (doc.exists) {
+        state = state.copyWith(user: UserModel.fromMap(doc.data()!, doc.id));
+      }
+    } catch (e) {
+      logger.e('Error reloading user', error: e);
+    }
+  }
+
+  void refreshUser(UserModel updatedUser) {
+    state = state.copyWith(user: updatedUser);
+  }
+
   void clearError() {
     state = state.copyWith(error: null);
   }
 
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
-  }
-
-  bool _isValidPassword(String password) {
-    return password.length >= 6;
-  }
-
-  String _getFirebaseErrorMessage(String code) {
-    switch (code) {
-      case 'weak-password':
-        return 'The password provided is too weak.';
-      case 'email-already-in-use':
-        return 'An account already exists with this email.';
-      case 'invalid-email':
-        return 'The email address is not valid.';
-      case 'user-not-found':
-        return 'No user found with this email.';
-      case 'wrong-password':
-        return 'Incorrect password.';
-      case 'user-disabled':
-        return 'This account has been disabled.';
-      case 'network-request-failed':
-        return 'Network error. Please check your connection.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please try again later.';
-      case 'invalid-verification-code':
-        return 'Invalid verification code.';
-      case 'invalid-verification-id':
-        return 'Invalid verification ID.';
-      default:
-        return 'An authentication error occurred. Please try again.';
-    }
-  }
+  // ==================== ADMIN METHODS ====================
 
   Future<List<RoleRequest>> getPendingRoleRequests() async {
     try {
@@ -571,14 +576,14 @@ class AuthProvider extends StateNotifier<AuthState> {
       final adminId = _firebaseAuth.currentUser?.uid;
       if (adminId == null) {
         state = state.copyWith(isLoading: false);
-        return const AuthResult.error('Admin not authenticated');
+        return const AuthResult.error('Admin is not authenticated.');
       }
 
       await _firestore.runTransaction((transaction) async {
         final userRef = _firestore.collection('users').doc(userId);
         transaction.update(userRef, {
-          'role': newRole.value,
-          'needsVerification': false,
+          'role': newRole.name,
+          'isApproved': true,
           'requestedRole': null,
           'requestStatus': 'approved',
           'approvedBy': adminId,
@@ -601,17 +606,18 @@ class AuthProvider extends StateNotifier<AuthState> {
       logger.i('Role request approved: $requestId for user: $userId');
 
       if (state.user?.id == userId) {
-        final updatedUser = state.user?.copyWith(role: newRole);
-        state = state.copyWith(user: updatedUser);
+        state = state.copyWith(
+          user: state.user?.copyWith(role: newRole, isApproved: true),
+        );
       }
 
       state = state.copyWith(isLoading: false);
-      return const AuthResult.success('Role request approved successfully');
+      return const AuthResult.success('Role request approved successfully.');
     } catch (e) {
       logger.e('Error approving role request', error: e);
       state = state.copyWith(isLoading: false);
       return AuthResult.error(
-        'Failed to approve role request: ${e.toString()}',
+        'Failed to approve role request. Please try again.',
       );
     }
   }
@@ -627,13 +633,12 @@ class AuthProvider extends StateNotifier<AuthState> {
       final adminId = _firebaseAuth.currentUser?.uid;
       if (adminId == null) {
         state = state.copyWith(isLoading: false);
-        return const AuthResult.error('Admin not authenticated');
+        return const AuthResult.error('Admin is not authenticated.');
       }
 
       await _firestore.runTransaction((transaction) async {
         final userRef = _firestore.collection('users').doc(userId);
         transaction.update(userRef, {
-          'needsVerification': false,
           'requestedRole': null,
           'requestStatus': 'rejected',
           'rejectedBy': adminId,
@@ -655,14 +660,89 @@ class AuthProvider extends StateNotifier<AuthState> {
 
       logger.i('Role request rejected: $requestId for user: $userId');
       state = state.copyWith(isLoading: false);
-      return const AuthResult.success('Role request rejected');
+      return const AuthResult.success('Role request rejected.');
     } catch (e) {
       logger.e('Error rejecting role request', error: e);
       state = state.copyWith(isLoading: false);
-      return AuthResult.error('Failed to reject role request: ${e.toString()}');
+      return AuthResult.error(
+        'Failed to reject role request. Please try again.',
+      );
+    }
+  }
+
+  // ==================== HELPERS ====================
+
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  }
+
+  bool _isValidPassword(String password) {
+    return password.length >= 6;
+  }
+
+  String _generateReferralCode(String name) {
+    final initials = name
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .map((w) => w[0].toUpperCase())
+        .join();
+    final suffix = (1000 + Random().nextInt(8999)).toString();
+    return '$initials$suffix';
+  }
+
+  String _getFirebaseErrorMessage(String code) {
+    switch (code) {
+      // ── Credential errors ──────────────────────────────────────────────
+      case 'invalid-credential':
+      case 'invalid-email-or-password':
+        return 'Incorrect email or password. Please check your details and try again.';
+      case 'wrong-password':
+        return 'Incorrect password. Please try again or reset your password.';
+      case 'user-not-found':
+        return 'No account found with this email address.';
+
+      // ── Account errors ─────────────────────────────────────────────────
+      case 'user-disabled':
+        return 'This account has been disabled. Please contact support.';
+      case 'email-already-in-use':
+        return 'An account already exists with this email address.';
+      case 'account-exists-with-different-credential':
+        return 'An account already exists with this email using a different sign-in method.';
+
+      // ── Input errors ───────────────────────────────────────────────────
+      case 'invalid-email':
+        return 'The email address format is not valid.';
+      case 'weak-password':
+        return 'Password is too weak. Please use at least 6 characters.';
+
+      // ── Session errors ─────────────────────────────────────────────────
+      case 'requires-recent-login':
+        return 'Please sign out and sign back in to perform this action.';
+      case 'too-many-requests':
+        return 'Too many failed attempts. Please wait a moment before trying again.';
+
+      // ── Network errors ─────────────────────────────────────────────────
+      case 'network-request-failed':
+        return 'Network error. Please check your internet connection and try again.';
+
+      // ── Verification errors ────────────────────────────────────────────
+      case 'invalid-verification-code':
+        return 'Invalid verification code. Please try again.';
+      case 'invalid-verification-id':
+        return 'Invalid verification ID. Please restart the process.';
+      case 'expired-action-code':
+        return 'This link has expired. Please request a new one.';
+      case 'invalid-action-code':
+        return 'This link is invalid or has already been used.';
+
+      // ── Fallback ───────────────────────────────────────────────────────
+      default:
+        return 'An authentication error occurred. Please try again.';
     }
   }
 }
+
+// ─── RoleRequest ─────────────────────────────────────────────────────────────
 
 class RoleRequest {
   final String id;
@@ -691,7 +771,6 @@ class RoleRequest {
 
   factory RoleRequest.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-
     return RoleRequest(
       id: doc.id,
       userId: data['userId'] ?? '',
@@ -707,6 +786,8 @@ class RoleRequest {
     );
   }
 }
+
+// ─── AuthResult ───────────────────────────────────────────────────────────────
 
 class AuthResult {
   final bool success;
@@ -736,6 +817,8 @@ class AuthResult {
 
 enum AuthResultType { success, warning, error }
 
+// ─── Providers ───────────────────────────────────────────────────────────────
+
 final authProvider = StateNotifierProvider<AuthProvider, AuthState>((ref) {
   return AuthProvider();
 });
@@ -744,16 +827,16 @@ final authStateProvider = Provider<AuthState>((ref) {
   return ref.watch(authProvider);
 });
 
-final currentUserProvider = Provider<AppUser?>((ref) {
+final currentUserProvider = Provider<UserModel?>((ref) {
   return ref.watch(authProvider).user;
 });
 
 final isAdminProvider = Provider<bool>((ref) {
   final user = ref.watch(currentUserProvider);
-  return user?.isAdmin ?? false;
+  return user?.role == UserRole.admin;
 });
 
 final isEmployeeProvider = Provider<bool>((ref) {
   final user = ref.watch(currentUserProvider);
-  return user?.isEmployee ?? false;
+  return user?.role == UserRole.employee;
 });

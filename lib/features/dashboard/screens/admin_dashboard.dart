@@ -1,16 +1,76 @@
+// lib/features/dashboard/screens/admin_dashboard.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../../core/constants/app_colors.dart';
 import '../../../../core/providers/auth_provider.dart';
-import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/role_badge.dart';
-import '../../../../core/widgets/status_badge.dart';
 import './admin/admin_user_management.dart';
 import './admin/admin_referral_approval.dart';
 import './admin/admin_task_approval.dart';
 import './admin/admin_role_requests.dart';
 import './admin/admin_settings.dart';
 import './admin/admin_analytics.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Colour palette for the four stat cards, derived entirely from AppColors:
+//
+//  Card 1  Total Users       → AppColors.primary  (brand green)
+//  Card 2  Pending Referrals → AppColors.secondary (dark charcoal)
+//  Card 3  Pending Tasks     → AppColors.success   (medium green)
+//  Card 4  Role Requests     → AppColors.error     (muted red — "needs attention")
+//
+// Each card has a matching "light" tint at ~10 % opacity used for
+// icon backgrounds and tag chips.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Card {
+  final String label;
+  final String tag;
+  final IconData icon;
+  final Color color; // full-strength colour for text / icon
+  final Color light; // ~10 % tint for surfaces
+
+  const _Card({
+    required this.label,
+    required this.tag,
+    required this.icon,
+    required this.color,
+    required this.light,
+  });
+}
+
+const _kCards = [
+  _Card(
+    label: 'Total Users',
+    tag: 'All time',
+    icon: Icons.people_alt_rounded,
+    color: AppColors.primary, // #2E7D32 green
+    light: Color(0xFFE8F5E9),
+  ),
+  _Card(
+    label: 'Pending Referrals',
+    tag: 'Needs review',
+    icon: Icons.person_add_alt_1_rounded,
+    color: Color(0xFF424242), // softened AppColors.secondary (#212121)
+    light: Color(0xFFF5F5F5),
+  ),
+  _Card(
+    label: 'Pending Tasks',
+    tag: 'Needs review',
+    icon: Icons.task_alt_rounded,
+    color: AppColors.success, // #388E3C medium green
+    light: Color(0xFFF1F8E9),
+  ),
+  _Card(
+    label: 'Role Requests',
+    tag: 'Pending',
+    icon: Icons.manage_accounts_rounded,
+    color: AppColors.error, // #D32F2F — draws eye to "needs action"
+    light: Color(0xFFFFEBEE),
+  ),
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -20,8 +80,12 @@ class AdminDashboardScreen extends ConsumerStatefulWidget {
       _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
+    with SingleTickerProviderStateMixin {
   bool _isLoading = true;
+  late AnimationController _fadeCtrl;
+  late Animation<double> _fadeAnim;
+
   Map<String, int> _stats = {
     'totalUsers': 0,
     'pendingReferrals': 0,
@@ -32,448 +96,547 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _fadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 480),
+    );
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _loadStats();
   }
 
+  @override
+  void dispose() {
+    _fadeCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadStats() async {
+    setState(() => _isLoading = true);
     try {
-      // Get all stats
-      final usersSnapshot = await FirebaseFirestore.instance
+      final usersSnap = await FirebaseFirestore.instance
           .collection('users')
           .count()
           .get();
-
-      final referralsSnapshot = await FirebaseFirestore.instance
+      final referralsSnap = await FirebaseFirestore.instance
           .collection('referrals')
           .where('status', isEqualTo: 'pending')
           .get();
-
-      final tasksSnapshot = await FirebaseFirestore.instance
+      final tasksSnap = await FirebaseFirestore.instance
           .collection('employee_tasks')
           .where('status', isEqualTo: 'pending')
           .get();
-
-      final roleRequestsSnapshot = await FirebaseFirestore.instance
+      final roleReqSnap = await FirebaseFirestore.instance
           .collection('role_requests')
           .where('status', isEqualTo: 'pending')
           .get();
 
-      setState(() {
-        _stats = {
-          'totalUsers': usersSnapshot.count ?? 0,
-          'pendingReferrals': referralsSnapshot.docs.length,
-          'pendingTasks': tasksSnapshot.docs.length,
-          'pendingRoleRequests': roleRequestsSnapshot.docs.length,
-        };
-        _isLoading = false;
-      });
-    } catch (e) {
-      print('Error loading stats: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _stats = {
+            'totalUsers': usersSnap.count ?? 0,
+            'pendingReferrals': referralsSnap.docs.length,
+            'pendingTasks': tasksSnap.docs.length,
+            'pendingRoleRequests': roleReqSnap.docs.length,
+          };
+          _isLoading = false;
+        });
+        _fadeCtrl.forward(from: 0);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // SAFE EMAIL PARSING FUNCTION
-  String _getUserNameFromEmail(String? email) {
-    if (email == null || email.isEmpty) {
-      return 'Admin';
-    }
-
-    // Check if email contains '@'
-    final atIndex = email.indexOf('@');
-    if (atIndex > 0) {
-      return email.substring(0, atIndex);
-    }
-
-    // If no '@', return the email itself (or first part if it contains special chars)
-    return email.split(RegExp(r'[^\w]')).first;
-  }
-
-  // SAFE NAME EXTRACTION
-  String _getDisplayName(user) {
-    if (user == null) return 'Admin';
-
-    // Check if displayName exists and is not empty
-    if (user.displayName != null &&
-        user.displayName is String &&
-        (user.displayName as String).isNotEmpty) {
-      return user.displayName;
-    }
-
-    // Fallback to email parsing
-    return _getUserNameFromEmail(user.email);
-  }
+  // ── BUILD ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
-    final userEmail = user?.email ?? '';
-    final userName = _getDisplayName(user);
+    final userName = (user?.fullName.isNotEmpty == true)
+        ? user!.fullName
+        : user?.email?.split('@').first ?? 'Admin';
+
+    final totalPending =
+        (_stats['pendingReferrals'] ?? 0) +
+        (_stats['pendingTasks'] ?? 0) +
+        (_stats['pendingRoleRequests'] ?? 0);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFDFAF6),
-      appBar: AppBar(
-        title: const Text('Admin Dashboard'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Color(0xFF2C3E50)),
-            onPressed: () => _navigateToNotifications(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: Color(0xFF2C3E50)),
-            onPressed: () => _logoutUser(context, ref),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF2C3E50)),
-            onPressed: _loadStats,
+      backgroundColor: AppColors.background,
+      drawer: _buildDrawer(context),
+      body: Column(
+        children: [
+          _buildHeader(context, userName, totalPending),
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
+                : FadeTransition(
+                    opacity: _fadeAnim,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 24),
+                          _buildStatsGrid(context),
+                          const SizedBox(height: 24),
+                          _buildRecentActivity(),
+                        ],
+                      ),
+                    ),
+                  ),
           ),
         ],
       ),
-      drawer: _buildAdminDrawer(context, ref),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    );
+  }
+
+  // ── HEADER ─────────────────────────────────────────────────────────────────
+
+  Widget _buildHeader(BuildContext context, String userName, int totalPending) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          // Dark green → brand green → lighter green — all from AppColors family
+          colors: [Color(0xFF1B5E20), AppColors.primary, Color(0xFF43A047)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Action row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
                 children: [
-                  // Welcome Header
-                  AppCard(
+                  Builder(
+                    builder: (ctx) => _iconBtn(
+                      Icons.menu_rounded,
+                      () => Scaffold.of(ctx).openDrawer(),
+                    ),
+                  ),
+                  const Spacer(),
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _iconBtn(Icons.notifications_outlined, () {}),
+                      if (totalPending > 0)
+                        Positioned(
+                          top: -3,
+                          right: -3,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: AppColors.error,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text(
+                              '$totalPending',
+                              style: const TextStyle(
+                                color: AppColors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 10),
+                  _iconBtn(Icons.refresh_rounded, () {
+                    _fadeCtrl.reset();
+                    _loadStats();
+                  }),
+                ],
+              ),
+            ),
+
+            // Welcome row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.white.withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.admin_panel_settings_rounded,
+                      color: AppColors.white,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF9C27B0),
-                                    Color(0xFF673AB7),
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                              child: const Icon(
-                                Icons.admin_panel_settings,
-                                color: Colors.white,
-                                size: 32,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Welcome, $userName!',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF2C3E50),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    userEmail.isNotEmpty
-                                        ? userEmail
-                                        : 'admin@example.com',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF7F8C8D),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF9C27B0),
-                                    Color(0xFF673AB7),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Text(
-                                'ADMIN',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Manage users, approve activities, and monitor system performance',
+                        Text(
+                          _greeting(),
                           style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF7F8C8D),
+                            fontSize: 13,
+                            color: AppColors.white.withOpacity(0.75),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          userName,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.white,
+                            letterSpacing: -0.3,
                           ),
                         ),
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // Quick Stats
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 0.9,
-                    children: [
-                      _buildStatCard(
-                        title: 'Total Users',
-                        value: _stats['totalUsers']?.toString() ?? '0',
-                        color: const Color(0xFF2E7D32),
-                        icon: Icons.people,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminUserManagementScreen(),
-                          ),
-                        ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.white.withOpacity(0.3),
                       ),
-                      _buildStatCard(
-                        title: 'Pending Referrals',
-                        value: _stats['pendingReferrals']?.toString() ?? '0',
-                        color: Colors.orange,
-                        icon: Icons.person_add,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminReferralApprovalScreen(),
-                          ),
-                        ),
+                    ),
+                    child: const Text(
+                      'ADMIN',
+                      style: TextStyle(
+                        color: AppColors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                        letterSpacing: 1,
                       ),
-                      _buildStatCard(
-                        title: 'Pending Tasks',
-                        value: _stats['pendingTasks']?.toString() ?? '0',
-                        color: Colors.blue,
-                        icon: Icons.task,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminTaskApprovalScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildStatCard(
-                        title: 'Role Requests',
-                        value: _stats['pendingRoleRequests']?.toString() ?? '0',
-                        color: Colors.purple,
-                        icon: Icons.verified_user,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminRoleRequestsScreen(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Quick Actions
-                  const Text(
-                    'Quick Actions',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
                     ),
                   ),
-                  const SizedBox(height: 10),
-
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                    childAspectRatio: 0.8,
-                    children: [
-                      _buildActionButton(
-                        icon: Icons.people,
-                        label: 'Users',
-                        color: const Color(0xFF2E7D32),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminUserManagementScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildActionButton(
-                        icon: Icons.person_add,
-                        label: 'Referrals',
-                        color: Colors.orange,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminReferralApprovalScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildActionButton(
-                        icon: Icons.task,
-                        label: 'Tasks',
-                        color: Colors.blue,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminTaskApprovalScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildActionButton(
-                        icon: Icons.verified_user,
-                        label: 'Role Requests',
-                        color: Colors.purple,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const AdminRoleRequestsScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildActionButton(
-                        icon: Icons.settings,
-                        label: 'Settings',
-                        color: Colors.grey,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AdminSettingsScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildActionButton(
-                        icon: Icons.analytics,
-                        label: 'Analytics',
-                        color: Colors.teal,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const AdminAnalyticsScreen(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Recent Activity
-                  const Text(
-                    'Recent Activity',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  FutureBuilder(
-                    future: _getRecentActivity(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      final activities = snapshot.data ?? [];
-
-                      if (activities.isEmpty) {
-                        return AppCard(
-                          child: Column(
-                            children: [
-                              const Icon(
-                                Icons.history,
-                                size: 48,
-                                color: Colors.grey,
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'No recent activity',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF7F8C8D),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Activity will appear here as users interact with the app',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      return Column(
-                        children: activities.take(5).map((activity) {
-                          return _buildActivityItem(
-                            icon: activity['icon'],
-                            title: activity['title'],
-                            subtitle: activity['subtitle'],
-                            time: activity['time'],
-                            color: activity['color'],
-                          );
-                        }).toList(),
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 30),
                 ],
               ),
             ),
+
+            // Summary strip
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.white.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.white.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    _strip('${_stats['totalUsers']}', 'Users'),
+                    _stripDivider(),
+                    _strip('${_stats['pendingReferrals']}', 'Referrals'),
+                    _stripDivider(),
+                    _strip('${_stats['pendingTasks']}', 'Tasks'),
+                    _stripDivider(),
+                    _strip('${_stats['pendingRoleRequests']}', 'Roles'),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildAdminDrawer(BuildContext context, WidgetRef ref) {
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
+  Widget _iconBtn(IconData icon, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: AppColors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(icon, color: AppColors.white, size: 20),
+    ),
+  );
+
+  Widget _strip(String value, String label) => Expanded(
+    child: Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: AppColors.white,
+            letterSpacing: -0.5,
+            height: 1,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: AppColors.white.withOpacity(0.7),
+            fontWeight: FontWeight.w500,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ),
+  );
+
+  Widget _stripDivider() =>
+      Container(width: 1, height: 32, color: AppColors.white.withOpacity(0.2));
+
+  // ── STATS GRID ─────────────────────────────────────────────────────────────
+
+  Widget _buildStatsGrid(BuildContext context) {
+    final routes = <Widget>[
+      const AdminUserManagementScreen(),
+      const AdminReferralApprovalScreen(),
+      const AdminTaskApprovalScreen(),
+      const AdminRoleRequestsScreen(),
+    ];
+
+    final values = [
+      '${_stats['totalUsers']}',
+      '${_stats['pendingReferrals']}',
+      '${_stats['pendingTasks']}',
+      '${_stats['pendingRoleRequests']}',
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 14,
+        mainAxisSpacing: 14,
+        childAspectRatio: 1.15,
+      ),
+      itemCount: _kCards.length,
+      itemBuilder: (context, i) => _StatCard(
+        card: _kCards[i],
+        value: values[i],
+        onTap: () => _push(context, routes[i]),
+      ),
+    );
+  }
+
+  // ── RECENT ACTIVITY ────────────────────────────────────────────────────────
+
+  Widget _buildRecentActivity() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DrawerHeader(
+          // Section header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Recent Activity',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5E9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    '● Live',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // List
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _getRecentActivity(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                );
+              }
+
+              final activities = snapshot.data ?? [];
+
+              if (activities.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 36),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.inbox_rounded,
+                          size: 48,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'No activity yet',
+                          style: TextStyle(
+                            color: AppColors.textNeutral,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Activity will appear here as users\ninteract with the app',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.textLight,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                child: Column(
+                  children: activities.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final a = entry.value;
+                    return Column(
+                      children: [
+                        _ActivityTile(activity: a),
+                        if (i < activities.length - 1)
+                          const Divider(
+                            height: 1,
+                            indent: 52,
+                            color: AppColors.border,
+                          ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── DRAWER ─────────────────────────────────────────────────────────────────
+
+  Widget _buildDrawer(BuildContext context) {
+    final items = [
+      _DrawerItem(
+        icon: Icons.people_alt_rounded,
+        label: 'User Management',
+        color: AppColors.primary,
+        badge: _stats['totalUsers'] ?? 0,
+        route: const AdminUserManagementScreen(),
+      ),
+      _DrawerItem(
+        icon: Icons.person_add_alt_1_rounded,
+        label: 'Referrals',
+        color: const Color(0xFF424242),
+        badge: _stats['pendingReferrals'] ?? 0,
+        route: const AdminReferralApprovalScreen(),
+      ),
+      _DrawerItem(
+        icon: Icons.task_alt_rounded,
+        label: 'Task Approvals',
+        color: AppColors.success,
+        badge: _stats['pendingTasks'] ?? 0,
+        route: const AdminTaskApprovalScreen(),
+      ),
+      _DrawerItem(
+        icon: Icons.manage_accounts_rounded,
+        label: 'Role Requests',
+        color: AppColors.error,
+        badge: _stats['pendingRoleRequests'] ?? 0,
+        route: const AdminRoleRequestsScreen(),
+      ),
+      _DrawerItem(
+        icon: Icons.bar_chart_rounded,
+        label: 'Analytics',
+        color: AppColors.primary,
+        badge: 0,
+        route: const AdminAnalyticsScreen(),
+      ),
+      _DrawerItem(
+        icon: Icons.settings_rounded,
+        label: 'Settings',
+        color: AppColors.secondary,
+        badge: 0,
+        route: const AdminSettingsScreen(),
+      ),
+    ];
+
+    return Drawer(
+      backgroundColor: AppColors.white,
+      child: Column(
+        children: [
+          // Header
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 20,
+              left: 20,
+              right: 20,
+              bottom: 24,
+            ),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF9C27B0), Color(0xFF673AB7)],
+                colors: [Color(0xFF1B5E20), AppColors.primary],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -481,361 +644,235 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.admin_panel_settings,
-                  size: 40,
-                  color: Colors.white,
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: AppColors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.white.withOpacity(0.3),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.admin_panel_settings_rounded,
+                    color: AppColors.white,
+                    size: 28,
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 const Text(
                   'Admin Panel',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: AppColors.white,
                     fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
                   ),
                 ),
+                const SizedBox(height: 4),
                 Text(
                   'Dowell Pest Control',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
-                    fontSize: 12,
+                    color: AppColors.white.withOpacity(0.7),
+                    fontSize: 13,
                   ),
                 ),
               ],
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.dashboard, color: Color(0xFF2E7D32)),
-            title: const Text('Dashboard'),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.people, color: Colors.blue),
-            title: const Text('User Management'),
-            trailing: FutureBuilder(
-              future: FirebaseFirestore.instance
-                  .collection('users')
-                  .count()
-                  .get(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  );
-                }
-                final count = snapshot.data?.count ?? 0;
-                return Badge(
-                  backgroundColor: Colors.blue,
-                  label: Text(count.toString()),
-                );
-              },
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminUserManagementScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.person_add, color: Colors.orange),
-            title: const Text('Pending Referrals'),
-            trailing: FutureBuilder(
-              future: FirebaseFirestore.instance
-                  .collection('referrals')
-                  .where('status', isEqualTo: 'pending')
-                  .get(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  );
-                }
-                final count = snapshot.data?.docs.length ?? 0;
-                return Badge(
-                  backgroundColor: Colors.orange,
-                  label: Text(count.toString()),
-                );
-              },
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminReferralApprovalScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.task, color: Colors.blue),
-            title: const Text('Pending Tasks'),
-            trailing: FutureBuilder(
-              future: FirebaseFirestore.instance
-                  .collection('employee_tasks')
-                  .where('status', isEqualTo: 'pending')
-                  .get(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  );
-                }
-                final count = snapshot.data?.docs.length ?? 0;
-                return Badge(
-                  backgroundColor: Colors.blue,
-                  label: Text(count.toString()),
-                );
-              },
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminTaskApprovalScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.verified_user, color: Colors.purple),
-            title: const Text('Role Requests'),
-            trailing: FutureBuilder(
-              future: FirebaseFirestore.instance
-                  .collection('role_requests')
-                  .where('status', isEqualTo: 'pending')
-                  .get(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  );
-                }
-                final count = snapshot.data?.docs.length ?? 0;
-                return Badge(
-                  backgroundColor: Colors.purple,
-                  label: Text(count.toString()),
-                );
-              },
-            ),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminRoleRequestsScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.analytics, color: Colors.teal),
-            title: const Text('Analytics'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminAnalyticsScreen(),
-                ),
-              );
-            },
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.settings, color: Colors.grey),
-            title: const Text('Settings'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminSettingsScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Logout'),
-            onTap: () => _logoutUser(context, ref),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required Color color,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-          border: Border.all(color: Colors.grey[200]!, width: 1),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.grey,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+          const SizedBox(height: 8),
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[200]!, width: 1),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActivityItem({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required String time,
-    required Color color,
-  }) {
-    return AppCard(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2C3E50),
+                // Dashboard (active) tile
+                ListTile(
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: const Icon(
+                      Icons.dashboard_rounded,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
                   ),
+                  title: const Text(
+                    'Dashboard',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  selected: true,
+                  selectedTileColor: const Color(0xFFE8F5E9).withOpacity(0.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  onTap: () => Navigator.pop(context),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF7F8C8D),
+
+                const SizedBox(height: 4),
+
+                ...items.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: ListTile(
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: item.color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(item.icon, color: item.color, size: 20),
+                      ),
+                      title: Text(
+                        item.label,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      trailing: item.badge > 0
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: item.color.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '${item.badge}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: item.color,
+                                ),
+                              ),
+                            )
+                          : null,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _push(context, item.route);
+                      },
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          Text(
-            time,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF7F8C8D)),
+
+          // Sign out
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            child: ListTile(
+              leading: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  color: AppColors.error,
+                  size: 20,
+                ),
+              ),
+              title: const Text(
+                'Sign Out',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.error,
+                ),
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _confirmLogout(context);
+              },
+            ),
           ),
         ],
       ),
     );
+  }
+
+  // ── HELPERS ────────────────────────────────────────────────────────────────
+
+  void _push(BuildContext context, Widget screen) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning,';
+    if (h < 17) return 'Good afternoon,';
+    return 'Good evening,';
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Sign Out',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textNeutral),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 0,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Sign Out',
+              style: TextStyle(
+                color: AppColors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await ref.read(authProvider.notifier).signOut();
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushNamedAndRemoveUntil('/login', (route) => false);
+    }
   }
 
   Future<List<Map<String, dynamic>>> _getRecentActivity() async {
@@ -843,105 +880,231 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       final referrals = await FirebaseFirestore.instance
           .collection('referrals')
           .orderBy('createdAt', descending: true)
-          .limit(5)
+          .limit(4)
           .get();
-
       final tasks = await FirebaseFirestore.instance
           .collection('employee_tasks')
           .orderBy('createdAt', descending: true)
-          .limit(5)
+          .limit(4)
           .get();
 
-      List<Map<String, dynamic>> activities = [];
+      final List<Map<String, dynamic>> activities = [];
 
-      // Add referral activities
       for (var doc in referrals.docs) {
         final data = doc.data();
-        final timestamp = data['createdAt'] as Timestamp?;
-        final timeAgo = timestamp != null
-            ? _getTimeAgo(timestamp.toDate())
-            : 'Recently';
-
         activities.add({
-          'icon': Icons.person_add,
+          'icon': Icons.person_add_alt_1_rounded,
           'title': 'New Referral',
           'subtitle':
-              '${data['referralName'] ?? 'Unknown'} by ${data['customerName'] ?? 'Customer'}',
-          'time': timeAgo,
-          'color': Colors.orange,
+              '${data['referralName'] ?? 'Unknown'} · by ${data['customerName'] ?? 'Customer'}',
+          'time': _timeAgo((data['createdAt'] as Timestamp?)?.toDate()),
+          'color': const Color(0xFF424242),
         });
       }
 
-      // Add task activities
       for (var doc in tasks.docs) {
         final data = doc.data();
-        final timestamp = data['createdAt'] as Timestamp?;
-        final timeAgo = timestamp != null
-            ? _getTimeAgo(timestamp.toDate())
-            : 'Recently';
-
         activities.add({
-          'icon': Icons.task,
+          'icon': Icons.task_alt_rounded,
           'title': 'Task Submitted',
           'subtitle':
-              '${data['taskType'] ?? 'Unknown'} by ${data['employeeName'] ?? 'Employee'}',
-          'time': timeAgo,
-          'color': Colors.blue,
+              '${data['taskType'] ?? 'Task'} · by ${data['employeeName'] ?? 'Employee'}',
+          'time': _timeAgo((data['createdAt'] as Timestamp?)?.toDate()),
+          'color': AppColors.success,
         });
       }
 
-      // Sort by time (most recent first)
-      activities.sort((a, b) {
-        // For demo, just sort by the order they were added
-        return 0;
-      });
-
-      return activities.take(5).toList();
-    } catch (e) {
-      print('Error getting recent activity: $e');
+      return activities.take(6).toList();
+    } catch (_) {
       return [];
     }
   }
 
-  String _getTimeAgo(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays > 30) {
-      return '${difference.inDays ~/ 30}mo ago';
-    } else if (difference.inDays > 0) {
-      return '${difference.inDays}d ago';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h ago';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m ago';
-    } else {
-      return 'Just now';
-    }
+  String _timeAgo(DateTime? date) {
+    if (date == null) return 'Recently';
+    final diff = DateTime.now().difference(date);
+    if (diff.inDays > 30) return '${diff.inDays ~/ 30}mo ago';
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'Just now';
   }
+}
 
-  Future<void> _logoutUser(BuildContext context, WidgetRef ref) async {
-    try {
-      await ref.read(authProvider.notifier).signOut();
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pushNamedAndRemoveUntil('/login', (route) => false);
-    } catch (e) {
-      print("❌ Logout error: $e");
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pushNamedAndRemoveUntil('/login', (route) => false);
-    }
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-widgets kept outside the state class to improve readability
+// ─────────────────────────────────────────────────────────────────────────────
 
-  void _navigateToNotifications(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Notifications screen coming soon!'),
-        backgroundColor: Color(0xFF2E7D32),
+class _StatCard extends StatelessWidget {
+  final _Card card;
+  final String value;
+  final VoidCallback onTap;
+
+  const _StatCard({
+    required this.card,
+    required this.value,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: card.color.withOpacity(0.1)),
+          boxShadow: [
+            BoxShadow(
+              color: card.color.withOpacity(0.07),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon + tag row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: card.light,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(card.icon, color: card.color, size: 22),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: card.light,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    card.tag,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: card.color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const Spacer(),
+
+            // Big number
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 34,
+                fontWeight: FontWeight.w800,
+                color: card.color,
+                letterSpacing: -1.5,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 4),
+
+            // Label
+            Text(
+              card.label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textNeutral,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+class _ActivityTile extends StatelessWidget {
+  final Map<String, dynamic> activity;
+  const _ActivityTile({required this.activity});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = activity['color'] as Color;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(activity['icon'] as IconData, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  activity['title'] as String,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  activity['subtitle'] as String,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textNeutral,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            activity['time'] as String,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textLight,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DrawerItem {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final int badge;
+  final Widget route;
+
+  const _DrawerItem({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.badge,
+    required this.route,
+  });
 }

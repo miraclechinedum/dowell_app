@@ -1,377 +1,145 @@
+// lib/features/dashboard/screens/customer/referrals_list_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Add this for user debugging
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../providers/referral_provider.dart';
 
-class ReferralsListScreen extends ConsumerStatefulWidget {
+class ReferralsListScreen extends StatefulWidget {
   const ReferralsListScreen({super.key});
 
   @override
-  ConsumerState<ReferralsListScreen> createState() =>
-      _ReferralsListScreenState();
+  State<ReferralsListScreen> createState() => _ReferralsListScreenState();
 }
 
-class _ReferralsListScreenState extends ConsumerState<ReferralsListScreen> {
-  final ScrollController _scrollController = ScrollController();
-  bool _isDebugMode = true; // Set to true to enable debug logs
+class _ReferralsListScreenState extends State<ReferralsListScreen> {
+  List<Map<String, dynamic>> _allReferrals = [];
+  bool _isLoading = true;
+  String? _error;
+  String _filter = 'all';
 
   @override
   void initState() {
     super.initState();
-    if (_isDebugMode) {
-      print('🔄 DEBUG: ReferralsListScreen initState() called');
-    }
+    _loadReferrals();
+  }
 
-    // Refresh when screen is opened
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_isDebugMode) {
-        print('🔄 DEBUG: Running post-frame callback to refresh referrals');
-      }
-      ref.read(referralListProvider.notifier).refresh();
+  Future<void> _loadReferrals() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
     });
-  }
-
-  String _formatDate(dynamic timestamp) {
     try {
-      if (timestamp == null) return 'N/A';
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) throw Exception('Not logged in');
 
-      if (timestamp is Timestamp) {
-        return DateFormat('MMM dd, yyyy').format(timestamp.toDate());
-      } else if (timestamp is DateTime) {
-        return DateFormat('MMM dd, yyyy').format(timestamp);
-      } else if (timestamp is String) {
-        return timestamp;
-      }
-      return 'Invalid date';
-    } catch (e) {
-      if (_isDebugMode) {
-        print('❌ DEBUG: Error formatting date: $e, timestamp: $timestamp');
-      }
-      return 'N/A';
-    }
-  }
-
-  String _getStatusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'Pending';
-      case 'contacted':
-        return 'Contacted';
-      case 'converted':
-        return 'Converted';
-      case 'rejected':
-        return 'Rejected';
-      default:
-        return status;
-    }
-  }
-
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return Colors.orange;
-      case 'contacted':
-        return Colors.blue;
-      case 'converted':
-        return Colors.green;
-      case 'rejected':
-        return Colors.red;
-      default:
-        return AppColors.textNeutral;
-    }
-  }
-
-  // Debug function to print current user info
-  void _debugPrintUserInfo() async {
-    if (!_isDebugMode) return;
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      print('👤 DEBUG: Current User Info:');
-      print('  - UID: ${user?.uid}');
-      print('  - Email: ${user?.email}');
-      print('  - Display Name: ${user?.displayName}');
-      print('  - Is Anonymous: ${user?.isAnonymous}');
-    } catch (e) {
-      print('❌ DEBUG: Error getting user info: $e');
-    }
-  }
-
-  // Debug function to print Firestore query info
-  void _debugPrintFirestoreQuery() async {
-    if (!_isDebugMode) return;
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        print('❌ DEBUG: No user logged in');
-        return;
-      }
-
-      print('📊 DEBUG: Testing Firestore Query Manually:');
-      print('  - User UID: ${user.uid}');
-
-      final snapshot = await FirebaseFirestore.instance
+      final snap = await FirebaseFirestore.instance
           .collection('referrals')
-          .where('customerId', isEqualTo: user.uid)
+          .where('referrerId', isEqualTo: uid)
+          .orderBy('submittedAt', descending: true)
           .get();
 
-      print('  - Total documents found: ${snapshot.docs.length}');
+      final referrals = snap.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
 
-      for (var doc in snapshot.docs) {
-        print('  - Document ID: ${doc.id}');
-        print('  - Data: ${doc.data()}');
-        print(
-          '  - Has customerId field: ${doc.data().containsKey('customerId')}',
-        );
-        print('  - customerId value: ${doc.data()['customerId']}');
-        print('  - Matches user UID: ${doc.data()['customerId'] == user.uid}');
-        print('  ---');
-      }
+      if (mounted)
+        setState(() {
+          _allReferrals = referrals;
+          _isLoading = false;
+        });
     } catch (e) {
-      print('❌ DEBUG: Error testing Firestore query: $e');
+      if (mounted)
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
     }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_filter == 'all') return _allReferrals;
+    return _allReferrals.where((r) => (r['status'] ?? '') == _filter).toList();
+  }
+
+  int get _totalReferrals => _allReferrals.length;
+  int get _convertedCount =>
+      _allReferrals.where((r) => r['status'] == 'converted').length;
+  int get _pendingCount =>
+      _allReferrals.where((r) => r['status'] == 'pending').length;
+  double get _totalBugBucks => _allReferrals.fold(
+    0.0,
+    (sum, r) => sum + ((r['bugBucksEarned'] as num?)?.toDouble() ?? 0.0),
+  );
+
+  String _formatDate(dynamic ts) {
+    if (ts == null) return 'N/A';
+    if (ts is Timestamp) return DateFormat('MMM dd, yyyy').format(ts.toDate());
+    if (ts is DateTime) return DateFormat('MMM dd, yyyy').format(ts);
+    return 'N/A';
   }
 
   @override
   Widget build(BuildContext context) {
-    final referralState = ref.watch(referralListProvider);
-    final referrals = referralState.referrals;
-    final isLoading = referralState.isLoading;
-    final error = referralState.error;
-    final filter = referralState.filter;
-
-    // DEBUG: Print state information
-    if (_isDebugMode) {
-      print('🎯 DEBUG: Build called with:');
-      print('  - isLoading: $isLoading');
-      print('  - error: $error');
-      print('  - filter: $filter');
-      print('  - referrals count: ${referrals.length}');
-      print('  - totalBugBucks: ${referralState.totalBugBucks}');
-      print('  - totalReferrals: ${referralState.totalReferrals}');
-
-      // Print first few referrals for debugging
-      for (int i = 0; i < referrals.length && i < 3; i++) {
-        print('  - Referral $i:');
-        print('    - Name: ${referrals[i]['referralName']}');
-        print('    - Email: ${referrals[i]['referralEmail']}');
-        print('    - Status: ${referrals[i]['status']}');
-        print('    - customerId: ${referrals[i]['customerId']}');
-      }
-
-      // Print stats
-      final stats = referralState.getStatusStats();
-      print('  - Stats: $stats');
-    }
-
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('My Referrals'),
         backgroundColor: Colors.white,
         elevation: 0,
+        iconTheme: const IconThemeData(color: AppColors.textDark),
         actions: [
-          // DEBUG: Add debug button
-          if (_isDebugMode)
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'debug_user') {
-                  _debugPrintUserInfo();
-                } else if (value == 'debug_firestore') {
-                  _debugPrintFirestoreQuery();
-                } else if (value == 'debug_state') {
-                  print('🎯 DEBUG: Current state dump:');
-                  print('  - Referrals: $referrals');
-                  print('  - Filter: $filter');
-                  print('  - Error: $error');
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'debug_user',
-                  child: Text('Debug: User Info'),
-                ),
-                const PopupMenuItem(
-                  value: 'debug_firestore',
-                  child: Text('Debug: Firestore Query'),
-                ),
-                const PopupMenuItem(
-                  value: 'debug_state',
-                  child: Text('Debug: State Info'),
-                ),
-              ],
-            ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: isLoading
-                ? null
-                : () {
-                    if (_isDebugMode) {
-                      print('🔄 DEBUG: Manual refresh triggered');
-                    }
-                    ref.read(referralListProvider.notifier).refresh();
-                  },
+            onPressed: _isLoading ? null : _loadReferrals,
           ),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            // Stats Summary
             Padding(
-              padding: const EdgeInsets.all(16),
-              child: _buildStatsSummary(referralState),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: _buildSummaryCard(),
             ),
-
-            // DEBUG: Show current user info
-            if (_isDebugMode && referrals.isEmpty) _buildDebugInfo(),
-
-            // Filters
-            _buildFilters(referralState),
-
-            // Referrals List
-            Expanded(child: _buildReferralsList(referrals, isLoading, error)),
+            const SizedBox(height: 12),
+            _buildFilters(),
+            Expanded(child: _buildBody()),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDebugInfo() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.yellow.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.yellow),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.bug_report, size: 16, color: Colors.orange),
-              SizedBox(width: 8),
-              Text(
-                'DEBUG MODE',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.orange,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Consumer(
-            builder: (context, ref, child) {
-              final referralState = ref.watch(referralListProvider);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'State: ${referralState.referrals.length} referrals, '
-                    'Filter: "${referralState.filter}"',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Error: ${referralState.error ?? "None"}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: () => _debugPrintFirestoreQuery(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      minimumSize: Size.zero,
-                    ),
-                    child: const Text('Test Firestore Query'),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsSummary(ReferralListState state) {
-    final stats = state.getStatusStats();
-
-    // DEBUG: Print stats
-    if (_isDebugMode) {
-      print('📊 DEBUG: Stats Summary:');
-      print('  - Total: ${state.totalReferrals}');
-      print('  - Pending: ${stats['pending']}');
-      print('  - Converted: ${stats['converted']}');
-      print('  - Contacted: ${stats['contacted']}');
-      print('  - Rejected: ${stats['rejected']}');
-      print('  - Bug Bucks: ${state.totalBugBucks}');
-    }
-
+  Widget _buildSummaryCard() {
     return AppCard(
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildStatItem(
-                'Total',
-                state.totalReferrals.toString(),
-                AppColors.primary,
-              ),
-              _buildStatItem(
-                'Pending',
-                stats['pending'].toString(),
-                Colors.orange,
-              ),
-              _buildStatItem(
-                'Converted',
-                stats['converted'].toString(),
-                Colors.green,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildStatItem(
-                'Bug Bucks',
-                state.totalBugBucks.toString(),
-                Colors.amber,
-              ),
-              _buildStatItem(
-                'Contacted',
-                stats['contacted'].toString(),
-                Colors.blue,
-              ),
-              _buildStatItem(
-                'Rejected',
-                stats['rejected'].toString(),
-                Colors.red,
-              ),
-            ],
+          _statItem('Total', _totalReferrals.toString(), AppColors.primary),
+          _divider(),
+          _statItem('Converted', _convertedCount.toString(), AppColors.success),
+          _divider(),
+          _statItem('Pending', _pendingCount.toString(), Colors.orange),
+          _divider(),
+          _statItem(
+            'Bug Bucks',
+            _totalBugBucks.toInt().toString(),
+            Colors.amber,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value, Color color) {
+  Widget _divider() =>
+      Container(width: 1, height: 36, color: const Color(0xFFE0E0E0));
+
+  Widget _statItem(String label, String value, Color color) {
     return Column(
       children: [
         Text(
@@ -382,371 +150,428 @@ class _ReferralsListScreenState extends ConsumerState<ReferralsListScreen> {
             color: color,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: AppColors.textNeutral),
+          style: const TextStyle(fontSize: 11, color: AppColors.textNeutral),
         ),
       ],
     );
   }
 
-  Widget _buildFilters(ReferralListState state) {
-    const filters = ['all', 'pending', 'contacted', 'converted', 'rejected'];
-    const filterLabels = {
+  Widget _buildFilters() {
+    const options = ['all', 'pending', 'converted', 'rejected'];
+    const labels = {
       'all': 'All',
       'pending': 'Pending',
-      'contacted': 'Contacted',
       'converted': 'Converted',
       'rejected': 'Rejected',
     };
-
-    if (_isDebugMode) {
-      print('🔍 DEBUG: Current filter: ${state.filter}');
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: SingleChildScrollView(
+    return SizedBox(
+      height: 40,
+      child: ListView(
         scrollDirection: Axis.horizontal,
-        child: Row(
-          children: filters.map((filter) {
-            final isSelected = state.filter == filter;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: FilterChip(
-                label: Text(filterLabels[filter] ?? filter),
-                selected: isSelected,
-                onSelected: (_) {
-                  if (_isDebugMode) {
-                    print(
-                      '🔍 DEBUG: Changing filter from ${state.filter} to $filter',
-                    );
-                  }
-                  ref.read(referralListProvider.notifier).setFilter(filter);
-                },
-                backgroundColor: isSelected
-                    ? AppColors.primary.withOpacity(0.1)
-                    : Colors.grey[200],
-                selectedColor: AppColors.primary.withOpacity(0.2),
-                labelStyle: TextStyle(
-                  color: isSelected ? AppColors.primary : AppColors.textDark,
-                ),
-                checkmarkColor: AppColors.primary,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: options.map((f) {
+          final selected = _filter == f;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(labels[f]!),
+              selected: selected,
+              onSelected: (_) => setState(() => _filter = f),
+              selectedColor: AppColors.primary.withOpacity(0.15),
+              backgroundColor: Colors.grey[100],
+              labelStyle: TextStyle(
+                color: selected ? AppColors.primary : AppColors.textNeutral,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                fontSize: 13,
               ),
-            );
-          }).toList(),
-        ),
+              checkmarkColor: AppColors.primary,
+              side: BorderSide(
+                color: selected ? AppColors.primary : Colors.transparent,
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildReferralsList(
-    List<Map<String, dynamic>> referrals,
-    bool isLoading,
-    String? error,
-  ) {
-    if (isLoading) {
-      if (_isDebugMode) {
-        print('⏳ DEBUG: Loading indicator shown');
-      }
-      return const Center(child: CircularProgressIndicator());
-    }
+  Widget _buildBody() {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
 
-    if (error != null) {
-      if (_isDebugMode) {
-        print('❌ DEBUG: Error state: $error');
-      }
+    if (_error != null) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error, color: AppColors.error, size: 48),
-            const SizedBox(height: 16),
-            Text(
-              error,
-              style: const TextStyle(color: AppColors.error),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                if (_isDebugMode) {
-                  print('🔄 DEBUG: Retry button pressed');
-                }
-                ref.read(referralListProvider.notifier).refresh();
-              },
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (referrals.isEmpty) {
-      if (_isDebugMode) {
-        print('📭 DEBUG: Empty referrals list');
-        _debugPrintUserInfo();
-        _debugPrintFirestoreQuery();
-      }
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.people_outline,
-              size: 64,
-              color: AppColors.textNeutral,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'No referrals yet',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textDark,
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 56, color: AppColors.error),
+              const SizedBox(height: 16),
+              const Text(
+                'Failed to load referrals',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textDark,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Submit your first referral to earn Bug Bucks!',
-              style: TextStyle(color: AppColors.textNeutral),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                if (_isDebugMode) {
-                  print('📝 DEBUG: Navigate to submit referral screen');
-                }
-                Navigator.pop(context); // Go back to submit screen
-              },
-              child: const Text('Submit Referral'),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: const TextStyle(color: AppColors.textNeutral),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _loadReferrals,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try Again'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    if (_isDebugMode) {
-      print('✅ DEBUG: Showing ${referrals.length} referrals');
-    }
+    final list = _filtered;
+
+    if (list.isEmpty) return _buildEmptyState();
 
     return RefreshIndicator(
-      onRefresh: () async {
-        if (_isDebugMode) {
-          print('🔄 DEBUG: Pull to refresh triggered');
-        }
-        await ref.read(referralListProvider.notifier).refresh();
-      },
+      onRefresh: _loadReferrals,
+      color: AppColors.primary,
       child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.all(16),
-        itemCount: referrals.length,
-        itemBuilder: (context, index) {
-          final referral = referrals[index];
-
-          // DEBUG: Print each referral
-          if (_isDebugMode && index == 0) {
-            print('📄 DEBUG: First referral data:');
-            print('  - Index: $index');
-            print('  - Name: ${referral['referralName']}');
-            print('  - Email: ${referral['referralEmail']}');
-            print('  - Status: ${referral['status']}');
-            print('  - customerId: ${referral['customerId']}');
-            print('  - Full data keys: ${referral.keys.toList()}');
-          }
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _buildReferralCard(referral),
-          );
-        },
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        itemCount: list.length,
+        itemBuilder: (context, i) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _buildCard(list[i]),
+        ),
       ),
     );
   }
 
-  Widget _buildReferralCard(Map<String, dynamic> referral) {
-    final referralName = referral['referralName'] as String? ?? 'Unknown';
-    final serviceType = referral['serviceType'] as String? ?? 'Unknown';
-    final status = referral['status'] as String? ?? 'pending';
-    final bugBucks = referral['bugBucksAwarded'] as int? ?? 0;
-    final submittedAt = referral['submittedAt'] ?? referral['createdAt'];
-    final notes = referral['notes'] as String?;
-    final customerId = referral['customerId'] as String?;
-    final user = FirebaseAuth.instance.currentUser;
-
-    // DEBUG: Check if customerId matches current user
-    if (_isDebugMode && customerId != null && user != null) {
-      final matches = customerId == user.uid;
-      print('🔍 DEBUG: Referral customerId: $customerId');
-      print('🔍 DEBUG: Current user UID: ${user.uid}');
-      print('🔍 DEBUG: Matches: $matches');
-    }
-
-    return AppCard(
+  Widget _buildEmptyState() {
+    return Center(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  referralName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textDark,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getStatusColor(status).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _getStatusColor(status)),
-                ),
-                child: Text(
-                  _getStatusLabel(status),
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: _getStatusColor(status),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.email, size: 14, color: AppColors.textNeutral),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  referral['referralEmail'] as String? ?? 'No email',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textNeutral,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              const Icon(Icons.phone, size: 14, color: AppColors.textNeutral),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  referral['referralPhone'] as String? ?? 'No phone',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textNeutral,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          // DEBUG: Show customerId if debug mode is on
-          if (_isDebugMode && customerId != null) ...[
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.person, size: 14, color: Colors.purple),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    'CID: ${customerId.substring(0, 8)}...',
-                    style: const TextStyle(fontSize: 12, color: Colors.purple),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.08),
+              shape: BoxShape.circle,
             ),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Chip(
-                label: Text(
-                  serviceType.replaceAll('_', ' ').toTitleCase(),
-                  style: const TextStyle(fontSize: 12),
-                ),
-                backgroundColor: AppColors.primary.withOpacity(0.1),
-              ),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.monetization_on,
-                    size: 16,
-                    color: Colors.amber,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$bugBucks Bug Bucks',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.amber,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            child: Icon(
+              _filter == 'all' ? Icons.people_outline : Icons.filter_list_off,
+              size: 48,
+              color: AppColors.primary.withOpacity(0.5),
+            ),
           ),
-          if (notes != null && notes.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Notes:',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textDark,
-              ),
+          const SizedBox(height: 20),
+          Text(
+            _filter == 'all' ? 'No referrals yet' : 'No ${_filter} referrals',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDark,
             ),
-            Text(
-              notes,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textNeutral,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+          ),
           const SizedBox(height: 8),
           Text(
-            'Submitted: ${_formatDate(submittedAt)}',
-            style: const TextStyle(fontSize: 12, color: AppColors.textNeutral),
+            _filter == 'all'
+                ? 'Submit your first referral to earn Bug Bucks!'
+                : 'Try a different filter to see your referrals.',
+            style: const TextStyle(color: AppColors.textNeutral),
+            textAlign: TextAlign.center,
           ),
+          if (_filter != 'all') ...[
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () => setState(() => _filter = 'all'),
+              child: const Text('Show all referrals'),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-}
+  Widget _buildCard(Map<String, dynamic> referral) {
+    final name = referral['referralName'] as String? ?? 'Unknown';
+    final status = (referral['status'] as String? ?? 'pending').toLowerCase();
+    final bugBucks = (referral['bugBucksEarned'] as num?)?.toDouble() ?? 0.0;
+    final submittedAt = referral['submittedAt'];
+    final address = referral['address'] as String?;
+    final phone = referral['phoneNumber'] as String?;
+    final email = referral['email'] as String?;
+    final notes = referral['notes'] as String?;
 
-// Helper extension for string formatting
-extension StringExtension on String {
-  String toTitleCase() {
-    return split(' ')
-        .map((word) {
-          if (word.isEmpty) return '';
-          return '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}';
-        })
-        .join(' ');
+    return GestureDetector(
+      onTap: () => _showDetails(referral),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Name + status badge
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _statusBadge(status),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Date
+            Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 13,
+                  color: AppColors.textNeutral,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  _formatDate(submittedAt),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textNeutral,
+                  ),
+                ),
+              ],
+            ),
+            if (address != null && address.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    size: 13,
+                    color: AppColors.textNeutral,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      address,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textNeutral,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            // Bug Bucks earned row — show for all referrals
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.stars, size: 15, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text(
+                      status == 'converted'
+                          ? '+${bugBucks.toInt()} Bug Bucks earned'
+                          : '${bugBucks.toInt()} Bug Bucks',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: status == 'converted'
+                            ? AppColors.success
+                            : Colors.amber,
+                      ),
+                    ),
+                  ],
+                ),
+                const Row(
+                  children: [
+                    Text(
+                      'View details',
+                      style: TextStyle(fontSize: 12, color: AppColors.primary),
+                    ),
+                    SizedBox(width: 2),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusBadge(String status) {
+    Color bg;
+    Color text;
+    String label;
+    switch (status) {
+      case 'converted':
+        bg = AppColors.success.withOpacity(0.12);
+        text = AppColors.success;
+        label = 'CONVERTED ✓';
+        break;
+      case 'rejected':
+        bg = AppColors.error.withOpacity(0.12);
+        text = AppColors.error;
+        label = 'REJECTED ✗';
+        break;
+      default:
+        bg = Colors.orange.withOpacity(0.12);
+        text = Colors.orange;
+        label = 'PENDING';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: text.withOpacity(0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: text,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  void _showDetails(Map<String, dynamic> referral) {
+    final name = referral['referralName'] as String? ?? 'Unknown';
+    final status = (referral['status'] as String? ?? 'pending').toLowerCase();
+    final bugBucks = (referral['bugBucksEarned'] as num?)?.toDouble() ?? 0.0;
+    final submittedAt = referral['submittedAt'];
+    final address = referral['address'] as String? ?? 'N/A';
+    final phone = referral['phoneNumber'] as String? ?? 'N/A';
+    final email = referral['email'] as String? ?? 'N/A';
+    final notes = referral['notes'] as String?;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                _statusBadge(status),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _detailRow(
+              Icons.calendar_today_outlined,
+              'Submitted',
+              _formatDate(submittedAt),
+            ),
+            _detailRow(Icons.location_on_outlined, 'Address', address),
+            _detailRow(Icons.phone_outlined, 'Phone', phone),
+            _detailRow(Icons.email_outlined, 'Email', email),
+            _detailRow(
+              Icons.stars,
+              'Bug Bucks',
+              '${bugBucks.toInt()} Bug Bucks',
+            ),
+            if (notes != null && notes.isNotEmpty)
+              _detailRow(Icons.notes_outlined, 'Notes', notes),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textNeutral,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -1,212 +1,227 @@
 // lib/core/models/user_model.dart
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UserRole {
-  customer,
-  employee,
-  admin,
-  nilAthlete;
+enum UserRole { customer, employee, athlete, admin }
 
-  static UserRole fromString(String role) {
-    switch (role) {
-      case 'admin':
-        return UserRole.admin;
-      case 'employee':
-        return UserRole.employee;
-      case 'nilAthlete':
-        return UserRole.nilAthlete;
-      case 'customer':
-      default:
-        return UserRole.customer;
-    }
-  }
+enum UserStatus { active, suspended }
 
-  String get value {
-    switch (this) {
-      case UserRole.admin:
-        return 'admin';
-      case UserRole.employee:
-        return 'employee';
-      case UserRole.nilAthlete:
-        return 'nilAthlete';
-      case UserRole.customer:
-        return 'customer';
-    }
-  }
+extension UserRoleExtension on UserRole {
+  /// String value stored in Firestore
+  String get value => name;
 
+  /// Whether this role needs admin approval before being active
   bool get requiresVerification =>
-      this == UserRole.employee || this == UserRole.nilAthlete;
+      this == UserRole.employee || this == UserRole.athlete;
 
   String get displayName {
     switch (this) {
-      case UserRole.admin:
-        return 'Admin';
-      case UserRole.employee:
-        return 'Employee';
-      case UserRole.nilAthlete:
-        return 'NIL Athlete';
       case UserRole.customer:
         return 'Customer';
+      case UserRole.employee:
+        return 'Employee';
+      case UserRole.athlete:
+        return 'NIL Athlete';
+      case UserRole.admin:
+        return 'Admin';
     }
   }
 }
 
-class AppUser {
+class UserModel {
   final String id;
   final String email;
-  final String? displayName;
-  final String? photoUrl;
+  final String fullName;
+  final String phoneNumber;
   final UserRole role;
+  final bool isApproved;
+  final DateTime createdAt;
+  final double walletBalance;
+  final String referralCode;
+
+  // Optional fields used by auth_provider
+  final bool emailVerified;
   final bool needsVerification;
   final String? requestedRole;
   final String? requestStatus;
-  final DateTime createdAt;
   final DateTime? lastLoginAt;
-  final bool emailVerified;
-  final DateTime? emailVerifiedAt;
-  final Map<String, dynamic>? metadata;
-  final String? phoneNumber;
-  final String? address;
-  final double? bugBucksBalance;
-  final double? cashBonusBalance;
 
-  AppUser({
+  const UserModel({
     required this.id,
     required this.email,
-    this.displayName,
-    this.photoUrl,
+    required this.fullName,
+    required this.phoneNumber,
     required this.role,
+    required this.isApproved,
+    required this.createdAt,
+    required this.walletBalance,
+    required this.referralCode,
+    this.emailVerified = false,
     this.needsVerification = false,
     this.requestedRole,
     this.requestStatus,
-    required this.createdAt,
     this.lastLoginAt,
-    this.emailVerified = false,
-    this.emailVerifiedAt,
-    this.metadata,
-    this.phoneNumber,
-    this.address,
-    this.bugBucksBalance,
-    this.cashBonusBalance,
   });
 
-  factory AppUser.createNew({
+  // ── Convenience getters ───────────────────────────────────────────────────
+  bool get isAdmin => role == UserRole.admin;
+  bool get isEmployee => role == UserRole.employee;
+  bool get isAthlete => role == UserRole.athlete;
+  bool get isCustomer => role == UserRole.customer;
+
+  // ── Alias getters for Firebase-style access ───────────────────────────────
+  String get uid => id;
+  String get displayName => fullName;
+
+  // ── Factory: build from Firestore DocumentSnapshot ────────────────────────
+  factory UserModel.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    return UserModel(
+      id: doc.id,
+      email: data['email'] as String? ?? '',
+      fullName: data['fullName'] as String? ?? '',
+      phoneNumber: data['phoneNumber'] as String? ?? '',
+      role: UserRole.values.firstWhere(
+        (r) => r.name == (data['role'] as String? ?? 'customer'),
+        orElse: () => UserRole.customer,
+      ),
+      isApproved: data['isApproved'] as bool? ?? true,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      walletBalance: (data['walletBalance'] as num?)?.toDouble() ?? 0.0,
+      referralCode: data['referralCode'] as String? ?? '',
+      emailVerified: data['emailVerified'] as bool? ?? false,
+      needsVerification: data['needsVerification'] as bool? ?? false,
+      requestedRole: data['requestedRole'] as String?,
+      requestStatus: data['requestStatus'] as String?,
+      lastLoginAt: (data['lastLoginAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  // ── Factory: build from plain Map (non-Firestore use) ─────────────────────
+  factory UserModel.fromMap(Map<String, dynamic> map, String id) {
+    return UserModel(
+      id: id,
+      email: map['email'] as String? ?? '',
+      fullName: map['fullName'] as String? ?? '',
+      phoneNumber: map['phoneNumber'] as String? ?? '',
+      role: UserRole.values.firstWhere(
+        (r) => r.name == (map['role'] as String? ?? 'customer'),
+        orElse: () => UserRole.customer,
+      ),
+      isApproved: map['isApproved'] as bool? ?? true,
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      walletBalance: (map['walletBalance'] as num?)?.toDouble() ?? 0.0,
+      referralCode: map['referralCode'] as String? ?? '',
+      emailVerified: map['emailVerified'] as bool? ?? false,
+      needsVerification: map['needsVerification'] as bool? ?? false,
+      requestedRole: map['requestedRole'] as String?,
+      requestStatus: map['requestStatus'] as String?,
+    );
+  }
+
+  // ── Factory: create a brand-new user (used on registration) ──────────────
+  factory UserModel.createNew({
     required String id,
     required String email,
     String? displayName,
     String? photoUrl,
     UserRole role = UserRole.customer,
     String? phoneNumber,
-    String? address,
   }) {
-    return AppUser(
+    return UserModel(
       id: id,
       email: email,
-      displayName: displayName ?? email.split('@').first,
-      photoUrl: photoUrl,
+      fullName: displayName ?? email.split('@').first,
+      phoneNumber: phoneNumber ?? '',
       role: role,
+      isApproved: !role.requiresVerification, // customers auto-approved
       createdAt: DateTime.now(),
+      walletBalance: 0.0,
+      referralCode: _generateReferralCode(
+        displayName ?? email.split('@').first,
+      ),
       emailVerified: false,
-      phoneNumber: phoneNumber,
-      address: address,
-      bugBucksBalance: 0.0,
-      cashBonusBalance: 0.0,
+      needsVerification: role.requiresVerification,
     );
   }
 
-  factory AppUser.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-
-    return AppUser(
-      id: doc.id,
-      email: data['email'] ?? '',
-      displayName: data['displayName'],
-      photoUrl: data['photoUrl'],
-      role: UserRole.fromString(data['role'] ?? 'customer'),
-      needsVerification: data['needsVerification'] ?? false,
-      requestedRole: data['requestedRole'],
-      requestStatus: data['requestStatus'],
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      lastLoginAt: (data['lastLoginAt'] as Timestamp?)?.toDate(),
-      emailVerified: data['emailVerified'] ?? false,
-      emailVerifiedAt: (data['emailVerifiedAt'] as Timestamp?)?.toDate(),
-      metadata: data['metadata'],
-      phoneNumber: data['phoneNumber'],
-      address: data['address'],
-      bugBucksBalance: (data['bugBucksBalance'] as num?)?.toDouble() ?? 0.0,
-      cashBonusBalance: (data['cashBonusBalance'] as num?)?.toDouble() ?? 0.0,
-    );
-  }
-
+  // ── Serialise to Firestore ────────────────────────────────────────────────
   Map<String, dynamic> toFirestore() {
     return {
       'email': email,
-      'displayName': displayName,
-      'photoUrl': photoUrl,
+      'fullName': fullName,
+      'phoneNumber': phoneNumber,
       'role': role.value,
+      'isApproved': isApproved,
+      'createdAt': FieldValue.serverTimestamp(),
+      'walletBalance': walletBalance,
+      'referralCode': referralCode,
+      'emailVerified': emailVerified,
       'needsVerification': needsVerification,
       'requestedRole': requestedRole,
       'requestStatus': requestStatus,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'lastLoginAt': lastLoginAt != null
-          ? Timestamp.fromDate(lastLoginAt!)
-          : null,
-      'emailVerified': emailVerified,
-      'emailVerifiedAt': emailVerifiedAt != null
-          ? Timestamp.fromDate(emailVerifiedAt!)
-          : null,
-      'metadata': metadata,
-      'phoneNumber': phoneNumber,
-      'address': address,
-      'bugBucksBalance': bugBucksBalance,
-      'cashBonusBalance': cashBonusBalance,
-      'updatedAt': FieldValue.serverTimestamp(),
+      'lastLoginAt': FieldValue.serverTimestamp(),
     };
   }
 
-  AppUser copyWith({
-    String? id,
+  // ── Serialise to plain Map ────────────────────────────────────────────────
+  Map<String, dynamic> toMap() {
+    return {
+      'email': email,
+      'fullName': fullName,
+      'phoneNumber': phoneNumber,
+      'role': role.value,
+      'isApproved': isApproved,
+      'createdAt': createdAt,
+      'walletBalance': walletBalance,
+      'referralCode': referralCode,
+      'emailVerified': emailVerified,
+      'needsVerification': needsVerification,
+      'requestedRole': requestedRole,
+      'requestStatus': requestStatus,
+    };
+  }
+
+  UserModel copyWith({
     String? email,
-    String? displayName,
-    String? photoUrl,
+    String? fullName,
+    String? phoneNumber,
     UserRole? role,
+    bool? isApproved,
+    double? walletBalance,
+    String? referralCode,
+    bool? emailVerified,
     bool? needsVerification,
     String? requestedRole,
     String? requestStatus,
-    DateTime? createdAt,
     DateTime? lastLoginAt,
-    bool? emailVerified,
-    DateTime? emailVerifiedAt,
-    Map<String, dynamic>? metadata,
-    String? phoneNumber,
-    String? address,
-    double? bugBucksBalance,
-    double? cashBonusBalance,
   }) {
-    return AppUser(
-      id: id ?? this.id,
+    return UserModel(
+      id: id,
       email: email ?? this.email,
-      displayName: displayName ?? this.displayName,
-      photoUrl: photoUrl ?? this.photoUrl,
+      fullName: fullName ?? this.fullName,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
       role: role ?? this.role,
+      isApproved: isApproved ?? this.isApproved,
+      createdAt: createdAt,
+      walletBalance: walletBalance ?? this.walletBalance,
+      referralCode: referralCode ?? this.referralCode,
+      emailVerified: emailVerified ?? this.emailVerified,
       needsVerification: needsVerification ?? this.needsVerification,
       requestedRole: requestedRole ?? this.requestedRole,
       requestStatus: requestStatus ?? this.requestStatus,
-      createdAt: createdAt ?? this.createdAt,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
-      emailVerified: emailVerified ?? this.emailVerified,
-      emailVerifiedAt: emailVerifiedAt ?? this.emailVerifiedAt,
-      metadata: metadata ?? this.metadata,
-      phoneNumber: phoneNumber ?? this.phoneNumber,
-      address: address ?? this.address,
-      bugBucksBalance: bugBucksBalance ?? this.bugBucksBalance,
-      cashBonusBalance: cashBonusBalance ?? this.cashBonusBalance,
     );
   }
 
-  bool get isAdmin => role == UserRole.admin;
-  bool get isEmployee => role == UserRole.employee;
-  bool get isNilAthlete => role == UserRole.nilAthlete;
-  bool get isCustomer => role == UserRole.customer;
-  String get uid => id;
+  // ── Helper ────────────────────────────────────────────────────────────────
+  static String _generateReferralCode(String name) {
+    final initials = name
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .map((w) => w[0].toUpperCase())
+        .join();
+    final suffix = (1000 + Random().nextInt(8999)).toString();
+    return '$initials$suffix';
+  }
 }

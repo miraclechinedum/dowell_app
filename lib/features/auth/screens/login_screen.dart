@@ -27,6 +27,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   late Animation<double> _cardFade;
 
   bool _isLoading = false;
+  bool _obscurePassword = true; // ← password toggle state
 
   @override
   void initState() {
@@ -133,44 +134,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Error banner
+                        // ── Error banner ─────────────────────────────────
                         if (authState.error != null)
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: 20),
-                            decoration: BoxDecoration(
-                              color: AppColors.error.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: AppColors.error.withOpacity(0.3),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.error_outline,
-                                  color: AppColors.error,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    authState.error!,
-                                    style: TextStyle(
-                                      color: AppColors.error,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          _ErrorBanner(message: authState.error!),
 
-                        // Form
+                        // ── Form ─────────────────────────────────────────
                         Form(
                           key: _formKey,
                           child: Column(
                             children: [
+                              // Email field
                               FormTextField(
                                 label: 'Email Address',
                                 hintText: 'you@example.com',
@@ -178,13 +151,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 controller: emailController,
                                 keyboardType: TextInputType.emailAddress,
                                 validator: (value) {
-                                  if (value == null || value.isEmpty) {
-                                    return 'Please enter your email';
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter your email address';
                                   }
                                   if (!RegExp(
                                     r'^[^@]+@[^@]+\.[^@]+',
-                                  ).hasMatch(value)) {
-                                    return 'Please enter a valid email';
+                                  ).hasMatch(value.trim())) {
+                                    return 'Please enter a valid email address';
                                   }
                                   return null;
                                 },
@@ -192,15 +165,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                               const SizedBox(height: 20),
 
+                              // ── Password field with show/hide toggle ──
                               FormTextField(
                                 label: 'Password',
                                 hintText: 'Enter your password',
-                                obscureText: true,
+                                obscureText: _obscurePassword,
                                 prefixIcon: const Icon(Icons.lock_outline),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                    color: AppColors.textNeutral,
+                                    size: 22,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
+                                ),
                                 controller: passwordController,
                                 validator: (value) {
                                   if (value == null || value.isEmpty) {
                                     return 'Please enter your password';
+                                  }
+                                  if (value.length < 6) {
+                                    return 'Password must be at least 6 characters';
                                   }
                                   return null;
                                 },
@@ -208,6 +197,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                               const SizedBox(height: 4),
 
+                              // Forgot password
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
@@ -234,7 +224,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                               const SizedBox(height: 32),
 
-                              // ── Sign In button with inline loader ────────
+                              // ── Sign In button ───────────────────────
                               _SignInButton(
                                 isLoading: _isLoading,
                                 onPressed: () async {
@@ -308,6 +298,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             email: emailController.text.trim(),
             password: passwordController.text,
           );
+      // Success → AuthWrapper automatically routes to the dashboard.
+      // Errors → authProvider sets state.error → shown by _ErrorBanner.
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -384,11 +376,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter your email';
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter your email address';
                     }
                     if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                      return 'Please enter a valid email';
+                      return 'Please enter a valid email address';
                     }
                     return null;
                   },
@@ -417,17 +409,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     child: ElevatedButton(
                       onPressed: () async {
                         if (formKey.currentState!.validate()) {
-                          await ref
+                          final result = await ref
                               .read(authProvider.notifier)
                               .resetPassword(controller.text.trim());
+
                           if (context.mounted) {
                             Navigator.pop(context);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  'Reset link sent to ${controller.text.trim()}',
+                                  result.isError
+                                      ? result.error ??
+                                            'Failed to send reset email'
+                                      : 'Reset link sent to ${controller.text.trim()}',
                                 ),
-                                backgroundColor: AppColors.success,
+                                backgroundColor: result.isError
+                                    ? AppColors.error
+                                    : AppColors.success,
+                                behavior: SnackBarBehavior.floating,
                               ),
                             );
                           }
@@ -454,6 +453,71 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─── Error banner widget ──────────────────────────────────────────────────────
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+  const _ErrorBanner({required this.message});
+
+  // Map Firebase error codes/messages to user-friendly text
+  String get _friendlyMessage {
+    final m = message.toLowerCase();
+    if (m.contains('invalid-credential') ||
+        m.contains('invalid credential') ||
+        m.contains('malformed or has expired')) {
+      return 'Incorrect email or password. Please check your details and try again.';
+    }
+    if (m.contains('user-not-found') || m.contains('user not found')) {
+      return 'No account found with this email address.';
+    }
+    if (m.contains('wrong-password') || m.contains('wrong password')) {
+      return 'Incorrect password. Please try again or reset your password.';
+    }
+    if (m.contains('user-disabled') || m.contains('user disabled')) {
+      return 'This account has been disabled. Please contact support.';
+    }
+    if (m.contains('too-many-requests') || m.contains('too many')) {
+      return 'Too many failed attempts. Please wait a moment before trying again.';
+    }
+    if (m.contains('network') || m.contains('connection')) {
+      return 'Network error. Please check your internet connection and try again.';
+    }
+    if (m.contains('email-not-verified') || m.contains('not verified')) {
+      return 'Please verify your email address before signing in.';
+    }
+    return message; // fallback to raw message
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: AppColors.error.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.error.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _friendlyMessage,
+              style: TextStyle(
+                color: AppColors.error,
+                fontSize: 13.5,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

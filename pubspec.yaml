@@ -25,6 +25,7 @@ dependencies:
   flutter_native_splash: ^2.4.7
   logger: ^2.0.2+1
   flutter_vector_icons: ^2.0.0
+  file_picker: ^8.0.0
 
 
 
