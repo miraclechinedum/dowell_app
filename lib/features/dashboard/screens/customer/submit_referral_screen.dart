@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../../core/models/user_model.dart';
-
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/providers/auth_provider.dart';
 import '../../../../core/widgets/primary_button.dart';
@@ -27,7 +26,17 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   final _notesController = TextEditingController();
 
   bool _isLoading = false;
-  static const double _bugBucksReward = 50.0;
+
+  // Loaded from app_config/settings — never hardcoded
+  double? _bugBucksReward;
+  bool _rewardOnSubmission = true;
+  bool _configLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfig();
+  }
 
   @override
   void dispose() {
@@ -39,8 +48,40 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     super.dispose();
   }
 
+  // ── Load admin-controlled config from Firestore ────────────────────────────
+  Future<void> _loadConfig() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('settings')
+          .get();
+
+      final data = doc.exists ? doc.data() as Map<String, dynamic> : {};
+      if (mounted) {
+        setState(() {
+          _bugBucksReward =
+              (data['bugBucksPerReferral'] as num?)?.toDouble() ?? 100.0;
+          _rewardOnSubmission = data['rewardOnSubmission'] as bool? ?? true;
+          _configLoading = false;
+        });
+      }
+    } catch (_) {
+      // Fall back to sensible defaults if config is unreachable
+      if (mounted) {
+        setState(() {
+          _bugBucksReward = 100.0;
+          _rewardOnSubmission = true;
+          _configLoading = false;
+        });
+      }
+    }
+  }
+
+  // ── Submit referral ────────────────────────────────────────────────────────
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_bugBucksReward == null) return;
+
     setState(() => _isLoading = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -48,14 +89,16 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
 
       final firestore = FirebaseFirestore.instance;
       final userRef = firestore.collection('users').doc(uid);
+      final reward = _bugBucksReward!;
 
       await firestore.runTransaction((tx) async {
         final userSnap = await tx.get(userRef);
         final currentBalance =
             (userSnap.data()?['walletBalance'] as num?)?.toDouble() ?? 0.0;
-        final newBalance = currentBalance + _bugBucksReward;
 
         final referralRef = firestore.collection('referrals').doc();
+
+        // Write the referral document
         tx.set(referralRef, {
           'referrerId': uid,
           'referralName': _nameController.text.trim(),
@@ -64,24 +107,33 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
           'email': _emailController.text.trim(),
           'notes': _notesController.text.trim(),
           'status': 'pending',
-          'bugBucksEarned': _bugBucksReward,
+          // Store what was earned and whether it was immediate so the admin
+          // screen can show the correct history even if the setting changes later
+          'bugBucksEarned': _rewardOnSubmission ? reward : 0.0,
+          'bugBucksPending': _rewardOnSubmission ? 0.0 : reward,
+          'rewardedOnSubmission': _rewardOnSubmission,
           'submittedAt': FieldValue.serverTimestamp(),
           'convertedAt': null,
           'crmId': null,
         });
 
-        final txRef = firestore.collection('transactions').doc();
-        tx.set(txRef, {
-          'userId': uid,
-          'amount': _bugBucksReward,
-          'type': 'referral_bonus',
-          'description': 'Referral bonus for submitting a new referral',
-          'referenceId': referralRef.id,
-          'createdAt': FieldValue.serverTimestamp(),
-          'balance': newBalance,
-        });
+        // Only credit wallet immediately if the admin has that setting on
+        if (_rewardOnSubmission) {
+          final newBalance = currentBalance + reward;
 
-        tx.update(userRef, {'walletBalance': newBalance});
+          final txRef = firestore.collection('transactions').doc();
+          tx.set(txRef, {
+            'userId': uid,
+            'amount': reward,
+            'type': 'referral_bonus',
+            'description': 'Bug Bucks earned for submitting a referral',
+            'referenceId': referralRef.id,
+            'createdAt': FieldValue.serverTimestamp(),
+            'balance': newBalance,
+          });
+
+          tx.update(userRef, {'walletBalance': newBalance});
+        }
       });
 
       // Refresh auth state so the dashboard reflects the new balance
@@ -111,7 +163,11 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     }
   }
 
+  // ── Success dialog ─────────────────────────────────────────────────────────
   Future<void> _showSuccessDialog() async {
+    final reward = _bugBucksReward!;
+    final immediate = _rewardOnSubmission;
+
     await showDialog(
       context: context,
       barrierDismissible: false,
@@ -149,16 +205,19 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Bug Bucks Added!',
-                          style: TextStyle(
+                        Text(
+                          immediate ? 'Bug Bucks Added!' : 'Bug Bucks Pending',
+                          style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
                             color: AppColors.textDark,
                           ),
                         ),
+                        const SizedBox(height: 2),
                         Text(
-                          '+${_bugBucksReward.toInt()} Bug Bucks added to your wallet',
+                          immediate
+                              ? '+${reward.toInt()} Bug Bucks added to your wallet'
+                              : '${reward.toInt()} Bug Bucks will be added once your referral converts',
                           style: const TextStyle(
                             color: AppColors.textNeutral,
                             fontSize: 13,
@@ -198,6 +257,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     );
   }
 
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -208,147 +268,120 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: AppColors.textDark),
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Reward banner
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.amber.withOpacity(0.4)),
-                  ),
-                  child: const Row(
+      body: _configLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
+          : SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.stars, color: Colors.amber, size: 28),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Earn 50 Bug Bucks',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Added to your wallet instantly on submission',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textNeutral,
-                              ),
-                            ),
-                          ],
-                        ),
+                      // ── Reward banner (live from config) ──────────────
+                      _RewardBanner(
+                        bugBucks: _bugBucksReward!,
+                        immediate: _rewardOnSubmission,
                       ),
+
+                      const SizedBox(height: 28),
+
+                      _label('Referral Full Name'),
+                      const SizedBox(height: 8),
+                      _field(
+                        controller: _nameController,
+                        hint: "Enter referral's full name",
+                        icon: Icons.person_outline,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Full name is required'
+                            : null,
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      _label('Address'),
+                      const SizedBox(height: 8),
+                      _field(
+                        controller: _addressController,
+                        hint: 'Street address, city, state, zip',
+                        icon: Icons.location_on_outlined,
+                        maxLines: 3,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Address is required'
+                            : null,
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      _label('Phone Number'),
+                      const SizedBox(height: 8),
+                      _field(
+                        controller: _phoneController,
+                        hint: '(123) 456-7890',
+                        icon: Icons.phone_outlined,
+                        keyboard: TextInputType.phone,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Phone number is required';
+                          }
+                          final digits = v.replaceAll(RegExp(r'[^0-9]'), '');
+                          if (digits.length < 10) {
+                            return 'Enter a valid phone number';
+                          }
+                          return null;
+                        },
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      _label('Email'),
+                      const SizedBox(height: 8),
+                      _field(
+                        controller: _emailController,
+                        hint: 'referral@example.com',
+                        icon: Icons.email_outlined,
+                        keyboard: TextInputType.emailAddress,
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Email is required';
+                          }
+                          if (!RegExp(
+                            r'^[^@]+@[^@]+\.[^@]+',
+                          ).hasMatch(v.trim())) {
+                            return 'Enter a valid email address';
+                          }
+                          return null;
+                        },
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      _label('Notes', optional: true),
+                      const SizedBox(height: 8),
+                      _field(
+                        controller: _notesController,
+                        hint:
+                            'Any details (e.g. "Prefers evening appointments")',
+                        icon: Icons.notes_outlined,
+                        maxLines: 4,
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      PrimaryButton(
+                        text: 'Submit Referral',
+                        onPressed: _isLoading ? null : _submit,
+                        isLoading: _isLoading,
+                      ),
+
+                      const SizedBox(height: 40),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 28),
-
-                _label('Referral Full Name'),
-                const SizedBox(height: 8),
-                _field(
-                  controller: _nameController,
-                  hint: "Enter referral's full name",
-                  icon: Icons.person_outline,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Full name is required'
-                      : null,
-                ),
-
-                const SizedBox(height: 20),
-
-                _label('Address'),
-                const SizedBox(height: 8),
-                _field(
-                  controller: _addressController,
-                  hint: 'Street address, city, state, zip',
-                  icon: Icons.location_on_outlined,
-                  maxLines: 3,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Address is required'
-                      : null,
-                ),
-
-                const SizedBox(height: 20),
-
-                _label('Phone Number'),
-                const SizedBox(height: 8),
-                _field(
-                  controller: _phoneController,
-                  hint: '(123) 456-7890',
-                  icon: Icons.phone_outlined,
-                  keyboard: TextInputType.phone,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Phone number is required';
-                    }
-                    final digits = v.replaceAll(RegExp(r'[^0-9]'), '');
-                    if (digits.length < 10) {
-                      return 'Enter a valid phone number';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 20),
-
-                _label('Email'),
-                const SizedBox(height: 8),
-                _field(
-                  controller: _emailController,
-                  hint: 'referral@example.com',
-                  icon: Icons.email_outlined,
-                  keyboard: TextInputType.emailAddress,
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Email is required';
-                    }
-                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v.trim())) {
-                      return 'Enter a valid email address';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 20),
-
-                _label('Notes', optional: true),
-                const SizedBox(height: 8),
-                _field(
-                  controller: _notesController,
-                  hint: 'Any details (e.g. "Prefers evening appointments")',
-                  icon: Icons.notes_outlined,
-                  maxLines: 4,
-                ),
-
-                const SizedBox(height: 32),
-
-                PrimaryButton(
-                  text: 'Submit Referral',
-                  onPressed: _isLoading ? null : _submit,
-                  isLoading: _isLoading,
-                ),
-
-                const SizedBox(height: 40),
-              ],
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -417,6 +450,58 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: AppColors.error, width: 1.5),
         ),
+      ),
+    );
+  }
+}
+
+// ── Reward banner extracted so it rebuilds independently ───────────────────
+class _RewardBanner extends StatelessWidget {
+  final double bugBucks;
+  final bool immediate;
+
+  const _RewardBanner({required this.bugBucks, required this.immediate});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.stars, color: Colors.amber, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Earn ${bugBucks.toInt()} Bug Bucks',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  immediate
+                      ? 'Added to your wallet instantly on submission'
+                      : 'Awarded once your referral becomes a customer',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textNeutral,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
