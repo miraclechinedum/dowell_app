@@ -1,1011 +1,1045 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
+// lib/features/dashboard/screens/employee/employee_submit_task_screen.dart
 import 'dart:io';
-import '../../../../core/constants/app_colors.dart';
-import '../../../../core/widgets/app_card.dart';
-import '../../../../core/providers/auth_provider.dart';
-import '../../../../core/services/employee_service.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import '../../../../../core/constants/app_colors.dart';
+import '../../../../../core/providers/auth_provider.dart';
+import 'employee_tasks_list_screen.dart';
 
+// ─── Task type option ─────────────────────────────────────────────────────────
+class _TaskTypeOption {
+  final String value;
+  final String label;
+  final IconData icon;
+  final Color color;
+  const _TaskTypeOption({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+}
+
+const _kTaskTypes = [
+  _TaskTypeOption(
+    value: 'marketing',
+    label: 'Marketing Activity',
+    icon: Icons.campaign_rounded,
+    color: Color(0xFF6A1B9A),
+  ),
+  _TaskTypeOption(
+    value: 'customer_interaction',
+    label: 'Customer Interaction',
+    icon: Icons.people_rounded,
+    color: Color(0xFF1565C0),
+  ),
+  _TaskTypeOption(
+    value: 'field_work',
+    label: 'Field Work',
+    icon: Icons.location_on_rounded,
+    color: Colors.orange,
+  ),
+  _TaskTypeOption(
+    value: 'other',
+    label: 'Other',
+    icon: Icons.task_alt_rounded,
+    color: AppColors.primary,
+  ),
+];
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 class SubmitTaskScreen extends ConsumerStatefulWidget {
   const SubmitTaskScreen({super.key});
 
   @override
-  _SubmitTaskScreenState createState() => _SubmitTaskScreenState();
+  ConsumerState<SubmitTaskScreen> createState() => _SubmitTaskScreenState();
 }
 
 class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _taskTitleController = TextEditingController();
-  final TextEditingController _taskDescriptionController =
-      TextEditingController();
-  final TextEditingController _customerNameController = TextEditingController();
-  final TextEditingController _customerEmailController =
-      TextEditingController();
-  final TextEditingController _customerPhoneController =
-      TextEditingController();
-  final TextEditingController _customerAddressController =
-      TextEditingController();
-  final TextEditingController _amountController = TextEditingController(
-    text: '0.00',
-  );
-  final TextEditingController _notesController = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _customerNameCtrl = TextEditingController();
+  final _customerPhoneCtrl = TextEditingController();
+  final _serviceAddressCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
 
-  List<XFile> _selectedImages = [];
-  final ImagePicker _picker = ImagePicker();
+  String _taskType = 'marketing';
+  DateTime _activityDate = DateTime.now();
+  final List<File> _photos = [];
+  bool _submitting = false;
 
-  String _selectedType = 'customer_followup';
-  String _selectedCategory = 'sales';
-  String _selectedPriority = 'medium';
-
-  final List<String> _taskTypes = [
-    'customer_followup',
-    'lead_generation',
-    'site_inspection',
-    'equipment_maintenance',
-    'client_presentation',
-    'field_survey',
-    'other',
-  ];
-
-  final List<String> _categories = ['sales', 'service', 'admin', 'marketing'];
-  final List<String> _priorities = ['low', 'medium', 'high'];
-
-  bool _isSubmitting = false;
-
-  Future<void> _pickImages() async {
-    try {
-      final List<XFile>? images = await _picker.pickMultiImage(
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 85,
-      );
-      if (images != null && images.isNotEmpty) {
-        setState(() {
-          _selectedImages.addAll(images);
-        });
-      }
-    } catch (e) {
-      _showError('Failed to pick images: $e');
-    }
-  }
-
-  Future<void> _takePhoto() async {
-    try {
-      final XFile? photo = await _picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1200,
-        maxHeight: 1200,
-        imageQuality: 85,
-      );
-      if (photo != null) {
-        setState(() {
-          _selectedImages.add(photo);
-        });
-      }
-    } catch (e) {
-      _showError('Failed to take photo: $e');
-    }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
-    );
-  }
-
-  Future<void> _submitTask() async {
-    if (_formKey.currentState!.validate()) {
-      if (_selectedImages.isEmpty) {
-        _showError('Please add at least one photo as evidence');
-        return;
-      }
-
-      setState(() {
-        _isSubmitting = true;
-      });
-
-      try {
-        final employeeService = EmployeeService();
-        final user = ref.read(authProvider).user;
-
-        if (user == null) {
-          throw Exception('User not authenticated');
-        }
-
-        // Parse amount
-        final amount = double.tryParse(_amountController.text) ?? 0.0;
-
-        // Submit task to Firestore
-        final taskId = await employeeService.submitTask(
-          title: _taskTitleController.text,
-          description: _taskDescriptionController.text,
-          customerName: _customerNameController.text,
-          customerEmail: _customerEmailController.text,
-          customerPhone: _customerPhoneController.text,
-          customerAddress: _customerAddressController.text.isNotEmpty
-              ? _customerAddressController.text
-              : null,
-          amount: amount,
-          notes: _notesController.text.isNotEmpty
-              ? _notesController.text
-              : null,
-          imagePaths: _selectedImages.map((xfile) => xfile.path).toList(),
-          type: _selectedType,
-          category: _selectedCategory,
-          priority: _selectedPriority,
-        );
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Task #$taskId submitted successfully!'),
-            backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-
-        // Clear form and navigate back after delay
-        await Future.delayed(const Duration(seconds: 2));
-
-        if (mounted) {
-          Navigator.pop(context);
-        }
-      } catch (e) {
-        _showError('Failed to submit task: $e');
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isSubmitting = false;
-          });
-        }
-      }
-    }
-  }
-
-  void _clearForm() {
-    _taskTitleController.clear();
-    _taskDescriptionController.clear();
-    _customerNameController.clear();
-    _customerEmailController.clear();
-    _customerPhoneController.clear();
-    _customerAddressController.clear();
-    _amountController.text = '0.00';
-    _notesController.clear();
-    setState(() {
-      _selectedImages.clear();
-      _selectedType = 'customer_followup';
-      _selectedCategory = 'sales';
-      _selectedPriority = 'medium';
-    });
-  }
-
-  String _getTaskTypeLabel(String type) {
-    switch (type) {
-      case 'customer_followup':
-        return 'Customer Follow-up';
-      case 'lead_generation':
-        return 'Lead Generation';
-      case 'site_inspection':
-        return 'Site Inspection';
-      case 'equipment_maintenance':
-        return 'Equipment Maintenance';
-      case 'client_presentation':
-        return 'Client Presentation';
-      case 'field_survey':
-        return 'Field Survey';
-      default:
-        return 'Other';
-    }
-  }
-
-  String _getPriorityLabel(String priority) {
-    switch (priority) {
-      case 'high':
-        return 'High Priority';
-      case 'medium':
-        return 'Medium Priority';
-      case 'low':
-        return 'Low Priority';
-      default:
-        return priority;
-    }
-  }
+  static const int _maxPhotos = 5;
+  final _picker = ImagePicker();
 
   @override
   void dispose() {
-    _taskTitleController.dispose();
-    _taskDescriptionController.dispose();
-    _customerNameController.dispose();
-    _customerEmailController.dispose();
-    _customerPhoneController.dispose();
-    _customerAddressController.dispose();
-    _amountController.dispose();
-    _notesController.dispose();
+    _descCtrl.dispose();
+    _customerNameCtrl.dispose();
+    _customerPhoneCtrl.dispose();
+    _serviceAddressCtrl.dispose();
+    _notesCtrl.dispose();
     super.dispose();
   }
 
-  // Custom input decoration for all text fields
-  InputDecoration _inputDecoration(String labelText, {String? hintText}) {
-    return InputDecoration(
-      labelText: labelText,
-      labelStyle: const TextStyle(
-        color: Color(0xFF555555),
-        fontWeight: FontWeight.w500,
-      ),
-      hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(
-          color: Color(0xFF2E7D32), // Primary green color
-          width: 2.0,
-        ),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.red, width: 1.5),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.red, width: 2.0),
-      ),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      floatingLabelBehavior: FloatingLabelBehavior.always,
-    );
+  // ── Photo picking ──────────────────────────────────────────────────────────
+  Future<void> _pickPhoto(ImageSource source) async {
+    if (_photos.length >= _maxPhotos) {
+      _showSnack('Maximum $_maxPhotos photos allowed', AppColors.error);
+      return;
+    }
+    try {
+      final xFile = await _picker.pickImage(
+        source: source,
+        imageQuality: 75,
+        maxWidth: 1200,
+      );
+      if (xFile != null && mounted) {
+        setState(() => _photos.add(File(xFile.path)));
+      }
+    } on PlatformException catch (e) {
+      if (mounted) _showSnack('Could not access photos: $e', AppColors.error);
+    }
   }
 
-  // Custom dropdown decoration
-  InputDecoration _dropdownDecoration(String labelText) {
-    return InputDecoration(
-      labelText: labelText,
-      labelStyle: const TextStyle(
-        color: Color(0xFF555555),
-        fontWeight: FontWeight.w500,
+  void _showPhotoSourceSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(
-          color: Color(0xFF2E7D32), // Primary green color
-          width: 2.0,
-        ),
-      ),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      floatingLabelBehavior: FloatingLabelBehavior.always,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Submit New Task'),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.textDark),
-          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-        ),
-      ),
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Task Details Section
-                const Text(
-                  'Task Details',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textDark,
-                  ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E0E0),
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(height: 12),
-
-                AppCard(
-                  child: Column(
-                    children: [
-                      // Task Type Dropdown
-                      DropdownButtonFormField<String>(
-                        value: _selectedType,
-                        decoration: _dropdownDecoration('Task Type *'),
-                        items: _taskTypes.map((type) {
-                          return DropdownMenuItem(
-                            value: type,
-                            child: Text(
-                              _getTaskTypeLabel(type),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF333333),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: _isSubmitting
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _selectedType = value!;
-                                });
-                              },
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Task Title
-                      TextFormField(
-                        controller: _taskTitleController,
-                        decoration: _inputDecoration(
-                          'Task Title *',
-                          hintText:
-                              'e.g., Customer Follow-up - Johnson Residence',
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter a task title';
-                          }
-                          if (value.length < 10) {
-                            return 'Title should be at least 10 characters';
-                          }
-                          return null;
-                        },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Task Description
-                      TextFormField(
-                        controller: _taskDescriptionController,
-                        decoration: _inputDecoration(
-                          'Task Description *',
-                          hintText: 'Describe what you did...',
-                        ),
-                        maxLines: 4,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please describe the task';
-                          }
-                          if (value.length < 20) {
-                            return 'Description should be at least 20 characters';
-                          }
-                          return null;
-                        },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Category and Priority in Row
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedCategory,
-                              decoration: _dropdownDecoration('Category'),
-                              items: _categories.map((category) {
-                                return DropdownMenuItem(
-                                  value: category,
-                                  child: Text(
-                                    category.toUpperCase(),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xFF333333),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: _isSubmitting
-                                  ? null
-                                  : (value) {
-                                      setState(() {
-                                        _selectedCategory = value!;
-                                      });
-                                    },
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF333333),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(width: 16),
-
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedPriority,
-                              decoration: _dropdownDecoration('Priority'),
-                              items: _priorities.map((priority) {
-                                return DropdownMenuItem(
-                                  value: priority,
-                                  child: Text(
-                                    _getPriorityLabel(priority),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xFF333333),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: _isSubmitting
-                                  ? null
-                                  : (value) {
-                                      setState(() {
-                                        _selectedPriority = value!;
-                                      });
-                                    },
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF333333),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Amount
-                      TextFormField(
-                        controller: _amountController,
-                        decoration: _inputDecoration(
-                          'Estimated Bonus Amount',
-                          hintText: '0.00',
-                        ),
-                        keyboardType: TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        validator: (value) {
-                          if (value != null && value.isNotEmpty) {
-                            final amount = double.tryParse(value);
-                            if (amount == null || amount < 0) {
-                              return 'Please enter a valid amount';
-                            }
-                          }
-                          return null;
-                        },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Notes
-                      TextFormField(
-                        controller: _notesController,
-                        decoration: _inputDecoration(
-                          'Additional Notes (Optional)',
-                          hintText: 'Add any additional notes here...',
-                        ),
-                        maxLines: 3,
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-                    ],
-                  ),
+              ),
+              const Text(
+                'Add Photo',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
                 ),
-
-                const SizedBox(height: 20),
-
-                // Customer Details Section
-                const Text(
-                  'Customer Details',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                AppCard(
-                  child: Column(
-                    children: [
-                      TextFormField(
-                        controller: _customerNameController,
-                        decoration: _inputDecoration('Customer Name *'),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter customer name';
-                          }
-                          return null;
-                        },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      TextFormField(
-                        controller: _customerEmailController,
-                        decoration: _inputDecoration('Customer Email *'),
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter customer email';
-                          }
-                          if (!value.contains('@')) {
-                            return 'Please enter a valid email';
-                          }
-                          return null;
-                        },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      TextFormField(
-                        controller: _customerPhoneController,
-                        decoration: _inputDecoration('Customer Phone *'),
-                        keyboardType: TextInputType.phone,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter customer phone';
-                          }
-                          return null;
-                        },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      TextFormField(
-                        controller: _customerAddressController,
-                        decoration: _inputDecoration(
-                          'Customer Address (Optional)',
-                        ),
-                        maxLines: 2,
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Evidence Upload Section
-                const Text(
-                  'Evidence Upload',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Upload photos as evidence (required)',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textNeutral,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Min: 1 photo, Max: 5 photos',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textNeutral.withOpacity(0.7),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _isSubmitting ? null : _pickImages,
-                              icon: const Icon(Icons.photo_library),
-                              label: const Text('Gallery'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                side: BorderSide(
-                                  color: AppColors.primary,
-                                  width: 1.5,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _isSubmitting ? null : _takePhoto,
-                              icon: const Icon(Icons.camera_alt),
-                              label: const Text('Camera'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                ),
-                                side: BorderSide(
-                                  color: AppColors.primary,
-                                  width: 1.5,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Selected Images
-                      if (_selectedImages.isNotEmpty)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Selected Images:',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-
-                            SizedBox(
-                              height: 120,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _selectedImages.length,
-                                itemBuilder: (context, index) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 8.0),
-                                    child: Stack(
-                                      children: [
-                                        Container(
-                                          width: 120,
-                                          height: 120,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            border: Border.all(
-                                              color: AppColors.border,
-                                              width: 1.5,
-                                            ),
-                                          ),
-                                          child: Image.file(
-                                            File(_selectedImages[index].path),
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                                  return Container(
-                                                    color: AppColors.background,
-                                                    child: const Center(
-                                                      child: Icon(
-                                                        Icons.error,
-                                                        color: AppColors.error,
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 4,
-                                          right: 4,
-                                          child: GestureDetector(
-                                            onTap: _isSubmitting
-                                                ? null
-                                                : () {
-                                                    setState(() {
-                                                      _selectedImages.removeAt(
-                                                        index,
-                                                      );
-                                                    });
-                                                  },
-                                            child: Container(
-                                              padding: const EdgeInsets.all(4),
-                                              decoration: const BoxDecoration(
-                                                color: Colors.white,
-                                                shape: BoxShape.circle,
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: Colors.black12,
-                                                    blurRadius: 4,
-                                                  ),
-                                                ],
-                                              ),
-                                              child: const Icon(
-                                                Icons.close,
-                                                size: 16,
-                                                color: AppColors.error,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          bottom: 4,
-                                          left: 4,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 6,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black54,
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                            ),
-                                            child: Text(
-                                              '${index + 1}',
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-
-                            if (_selectedImages.length < 5)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Text(
-                                  'You can add ${5 - _selectedImages.length} more images',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.success,
-                                  ),
-                                ),
-                              )
-                            else
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Text(
-                                  'Maximum 5 images reached',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.orange,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        )
-                      else
-                        Container(
-                          height: 120,
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: AppColors.border,
-                              width: 1.5,
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.image,
-                                  size: 48,
-                                  color: AppColors.textNeutral,
-                                ),
-                                SizedBox(height: 8),
-                                Text(
-                                  'No images selected',
-                                  style: TextStyle(
-                                    color: AppColors.textNeutral,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // Submit Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _submitTask,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
-                    ),
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: CircularProgressIndicator(
-                              color: AppColors.white,
-                              strokeWidth: 3,
-                            ),
-                          )
-                        : const Text(
-                            'Submit Task for Approval',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // Cancel Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: OutlinedButton(
-                    onPressed: _isSubmitting
-                        ? null
-                        : () => Navigator.pop(context),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: AppColors.border, width: 1.5),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Cancel',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDark,
-                      ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _photoSourceTile(
+                      icon: Icons.camera_alt_rounded,
+                      label: 'Take Photo',
+                      color: AppColors.primary,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _pickPhoto(ImageSource.camera);
+                      },
                     ),
                   ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Information Section
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: AppColors.primary,
-                            size: 20,
-                          ),
-                          SizedBox(width: 8),
-                          Text(
-                            'Important Information',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoItem(
-                        Icons.check_circle,
-                        'Photos are required as evidence for task verification.',
-                      ),
-                      _buildInfoItem(
-                        Icons.check_circle,
-                        'Tasks will be reviewed by admin within 24-48 hours.',
-                      ),
-                      _buildInfoItem(
-                        Icons.check_circle,
-                        'Cash bonuses are awarded after admin approval.',
-                      ),
-                      _buildInfoItem(
-                        Icons.check_circle,
-                        'Keep customer information accurate for follow-up.',
-                      ),
-                    ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _photoSourceTile(
+                      icon: Icons.photo_library_rounded,
+                      label: 'From Gallery',
+                      color: const Color(0xFF1565C0),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _pickPhoto(ImageSource.gallery);
+                      },
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildInfoItem(IconData icon, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _photoSourceTile({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
         children: [
-          Icon(icon, size: 16, color: AppColors.success),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textNeutral,
-              ),
+          Icon(icon, color: color, size: 28),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: color,
             ),
           ),
         ],
+      ),
+    ),
+  );
+
+  // ── Date picker ────────────────────────────────────────────────────────────
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _activityDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now(),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: AppColors.primary,
+            onPrimary: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _activityDate = picked);
+    }
+  }
+
+  // ── Upload photos to Firebase Storage ─────────────────────────────────────
+  Future<List<String>> _uploadPhotos(String taskId) async {
+    final urls = <String>[];
+    for (var i = 0; i < _photos.length; i++) {
+      final ref = FirebaseStorage.instance.ref().child(
+        'task_photos/$taskId/photo_$i.jpg',
+      );
+      final uploadTask = await ref.putFile(_photos[i]);
+      final url = await uploadTask.ref.getDownloadURL();
+      urls.add(url);
+    }
+    return urls;
+  }
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_descCtrl.text.trim().isEmpty) {
+      _showSnack('Description is required', AppColors.error);
+      return;
+    }
+
+    setState(() => _submitting = true);
+
+    try {
+      final uid = ref.read(authProvider).user?.uid;
+      final userName = ref.read(authProvider).user?.fullName ?? '';
+      if (uid == null) throw Exception('Not authenticated');
+
+      final db = FirebaseFirestore.instance;
+
+      // Create task doc first to get the ID for photo paths
+      final docRef = db.collection('employee_tasks').doc();
+      final taskId = docRef.id;
+
+      // Upload photos if any
+      List<String> photoUrls = [];
+      if (_photos.isNotEmpty) {
+        photoUrls = await _uploadPhotos(taskId);
+      }
+
+      // Build task data matching the Task model
+      final taskData = {
+        'id': taskId,
+        'employeeId': uid,
+        'employeeName': userName,
+        'taskType': _taskType,
+        'description': _descCtrl.text.trim(),
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'photos': photoUrls,
+        'activityDate': Timestamp.fromDate(_activityDate),
+        // Customer details (optional)
+        'customerName': _customerNameCtrl.text.trim().isEmpty
+            ? null
+            : _customerNameCtrl.text.trim(),
+        'customerPhone': _customerPhoneCtrl.text.trim().isEmpty
+            ? null
+            : _customerPhoneCtrl.text.trim(),
+        'customerAddress': _serviceAddressCtrl.text.trim().isEmpty
+            ? null
+            : _serviceAddressCtrl.text.trim(),
+        // Status
+        'status': 'pending',
+        'bonusAmount': null,
+        'adminNotes': null,
+        'submittedAt': FieldValue.serverTimestamp(),
+        'reviewedAt': null,
+      };
+
+      await docRef.set(taskData);
+
+      if (mounted) {
+        _showSuccessDialog();
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnack('Failed to submit task: $e', AppColors.error);
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        contentPadding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: AppColors.success.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.success,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Task Submitted!',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Your task has been submitted for review. You\'ll be notified once it\'s approved.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textNeutral,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx); // close dialog
+                  // Navigate to My Submissions, replacing this screen
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const EmployeeTasksListScreen(),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'View My Submissions',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context); // back to dashboard
+                },
+                child: const Text(
+                  'Back to Dashboard',
+                  style: TextStyle(
+                    color: AppColors.textNeutral,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── BUILD ──────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text(
+          'Submit Work Task',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: AppColors.textDark,
+        elevation: 0,
+        centerTitle: false,
+      ),
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── SECTION 1: Task Details ──────────────────────────────
+              _sectionHeader(
+                icon: Icons.assignment_rounded,
+                color: AppColors.primary,
+                title: 'Task Details',
+                subtitle: 'Tell us what you worked on',
+              ),
+              const SizedBox(height: 14),
+
+              // Task Type
+              _fieldLabel('Task Type', required: true),
+              const SizedBox(height: 8),
+              _buildTaskTypeSelector(),
+              const SizedBox(height: 16),
+
+              // Description
+              _fieldLabel('Description', required: true),
+              const SizedBox(height: 8),
+              _buildTextField(
+                controller: _descCtrl,
+                hint: 'Describe what you did in detail...',
+                maxLines: 4,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? 'Description is required'
+                    : null,
+              ),
+              const SizedBox(height: 16),
+
+              // Date of Activity
+              _fieldLabel('Date of Activity', required: true),
+              const SizedBox(height: 8),
+              _buildDatePicker(),
+
+              const SizedBox(height: 28),
+
+              // ── SECTION 2: Evidence / Photos ─────────────────────────
+              _sectionHeader(
+                icon: Icons.photo_camera_rounded,
+                color: const Color(0xFF1565C0),
+                title: 'Evidence / Photos',
+                subtitle: 'Add up to $_maxPhotos photos as proof of work',
+              ),
+              const SizedBox(height: 14),
+              _buildPhotoSection(),
+
+              const SizedBox(height: 28),
+
+              // ── SECTION 3: Customer Details (Optional) ───────────────
+              _sectionHeader(
+                icon: Icons.person_outline_rounded,
+                color: const Color(0xFF6A1B9A),
+                title: 'Customer Details',
+                subtitle: 'Optional — fill in if this task involved a customer',
+                required: false,
+              ),
+              const SizedBox(height: 14),
+
+              _fieldLabel('Customer Name'),
+              const SizedBox(height: 8),
+              _buildTextField(
+                controller: _customerNameCtrl,
+                hint: 'e.g. John Smith',
+              ),
+              const SizedBox(height: 16),
+
+              _fieldLabel('Customer Phone'),
+              const SizedBox(height: 8),
+              _buildTextField(
+                controller: _customerPhoneCtrl,
+                hint: 'e.g. (361) 555-0100',
+                keyboardType: TextInputType.phone,
+              ),
+              const SizedBox(height: 16),
+
+              _fieldLabel('Service Address'),
+              const SizedBox(height: 8),
+              _buildTextField(
+                controller: _serviceAddressCtrl,
+                hint: 'e.g. 123 Main St, Port Lavaca, TX',
+              ),
+              const SizedBox(height: 16),
+
+              _fieldLabel('Notes'),
+              const SizedBox(height: 8),
+              _buildTextField(
+                controller: _notesCtrl,
+                hint: 'Any additional notes about this interaction...',
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+      ),
+      // ── Sticky submit button ───────────────────────────────────────────────
+      bottomNavigationBar: Container(
+        color: Colors.white,
+        padding: EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          MediaQuery.of(context).padding.bottom + 12,
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          height: 54,
+          child: ElevatedButton(
+            onPressed: _submitting ? null : _submit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              disabledBackgroundColor: AppColors.primary.withOpacity(0.6),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: _submitting
+                ? const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Text(
+                        'Submitting...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Submit for Review',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Task type selector ─────────────────────────────────────────────────────
+  Widget _buildTaskTypeSelector() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+      childAspectRatio: 2.8,
+      children: _kTaskTypes.map((t) {
+        final selected = _taskType == t.value;
+        return GestureDetector(
+          onTap: () => setState(() => _taskType = t.value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? t.color.withOpacity(0.1) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected ? t.color : const Color(0xFFE5E5E5),
+                width: selected ? 2 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: t.color.withOpacity(0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.03),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  t.icon,
+                  color: selected ? t.color : AppColors.textNeutral,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    t.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? t.color : AppColors.textNeutral,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (selected)
+                  Icon(Icons.check_circle, color: t.color, size: 14),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ── Date picker tile ───────────────────────────────────────────────────────
+  Widget _buildDatePicker() {
+    return GestureDetector(
+      onTap: _pickDate,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E5E5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: const Icon(
+                Icons.calendar_today_rounded,
+                color: AppColors.primary,
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                DateFormat('EEEE, MMMM d, yyyy').format(_activityDate),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.edit_calendar_rounded,
+              color: AppColors.textNeutral,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Photo section ──────────────────────────────────────────────────────────
+  Widget _buildPhotoSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Counter + add button row
+        Row(
+          children: [
+            Text(
+              '${_photos.length} / $_maxPhotos photos',
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textNeutral,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            if (_photos.length < _maxPhotos)
+              GestureDetector(
+                onTap: _showPhotoSourceSheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1565C0).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFF1565C0).withOpacity(0.25),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.add_photo_alternate_rounded,
+                        color: Color(0xFF1565C0),
+                        size: 16,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'Add Photos',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1565C0),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        if (_photos.isEmpty)
+          // Empty state
+          GestureDetector(
+            onTap: _showPhotoSourceSheet,
+            child: Container(
+              width: double.infinity,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0xFFE5E5E5),
+                  style: BorderStyle.solid,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.add_photo_alternate_outlined,
+                    size: 36,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tap to add photos',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Camera or gallery — max $_maxPhotos photos',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          // Photo grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: _photos.length + (_photos.length < _maxPhotos ? 1 : 0),
+            itemBuilder: (ctx, i) {
+              // Add more tile
+              if (i == _photos.length) {
+                return GestureDetector(
+                  onTap: _showPhotoSourceSheet,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1565C0).withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFF1565C0).withOpacity(0.2),
+                        style: BorderStyle.solid,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.add_rounded,
+                          color: const Color(0xFF1565C0),
+                          size: 28,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Add',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: const Color(0xFF1565C0),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              // Photo tile
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(_photos[i], fit: BoxFit.cover),
+                  ),
+                  // Remove button
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _photos.removeAt(i)),
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: const BoxDecoration(
+                          color: Colors.black87,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Index label
+                  Positioned(
+                    bottom: 4,
+                    left: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${i + 1}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  // ── Shared helpers ─────────────────────────────────────────────────────────
+  Widget _sectionHeader({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    bool required = true,
+  }) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(icon, color: color, size: 18),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                if (!required) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.textLight.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Optional',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textNeutral,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textNeutral,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+
+  Widget _fieldLabel(String text, {bool required = false}) => Row(
+    children: [
+      Text(
+        text,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textDark,
+        ),
+      ),
+      if (required) ...[
+        const SizedBox(width: 4),
+        const Text('*', style: TextStyle(color: AppColors.error, fontSize: 13)),
+      ],
+    ],
+  );
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hint,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) => TextFormField(
+    controller: controller,
+    maxLines: maxLines,
+    keyboardType: keyboardType,
+    validator: validator,
+    style: const TextStyle(fontSize: 14, color: AppColors.textDark),
+    decoration: InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: AppColors.textLight, fontSize: 13),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE5E5E5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.error, width: 1.5),
+      ),
+    ),
+  );
+
+  void _showSnack(String msg, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }

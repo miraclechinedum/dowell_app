@@ -105,6 +105,7 @@ class _CustomerDashboardScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const AnnouncementBanner(userRole: 'customer'),
+              const SizedBox(height: 12),
               // Welcome Header
               AppCard(
                 child: Column(

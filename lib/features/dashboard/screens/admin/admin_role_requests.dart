@@ -27,6 +27,7 @@ class _RoleRequest {
   final String? handle;
   final String? followers;
   final String? niche;
+  final String? samplePostLink;
   final String? adminNotes;
 
   const _RoleRequest({
@@ -48,6 +49,7 @@ class _RoleRequest {
     this.handle,
     this.followers,
     this.niche,
+    this.samplePostLink,
     this.adminNotes,
   });
 
@@ -59,7 +61,9 @@ class _RoleRequest {
     final d = reqDoc.data() as Map<String, dynamic>;
     final u = userData ?? {};
 
-    final userName = (u['displayName'] as String?)?.isNotEmpty == true
+    final userName = (u['fullName'] as String?)?.isNotEmpty == true
+        ? u['fullName'] as String
+        : (u['displayName'] as String?)?.isNotEmpty == true
         ? u['displayName'] as String
         : (d['userName'] as String?)?.isNotEmpty == true
         ? d['userName'] as String
@@ -76,6 +80,29 @@ class _RoleRequest {
         (u['createdAt'] as Timestamp?)?.toDate() ??
         (d['accountCreatedAt'] as Timestamp?)?.toDate();
 
+    // supportingInfo is a nested map written by role_request_screen.dart
+    final si = d['supportingInfo'] as Map<String, dynamic>? ?? {};
+
+    // Employee fields — stored inside supportingInfo
+    final experience = si['experience'] as String?;
+    final skills = si['skills'] as String?;
+    final resumeLink =
+        si['resumeDownloadUrl'] as String? ??
+        si['resumeLink'] as String? ??
+        d['resumeLink'] as String?;
+
+    // Athlete fields — stored inside supportingInfo
+    final platform = si['platform'] as String?;
+    final rawHandle = si['handle'] as String? ?? '';
+    final handle = rawHandle.isNotEmpty
+        ? (rawHandle.startsWith('@') ? rawHandle : '@$rawHandle')
+        : null;
+    final followers = si['followerCount'] != null
+        ? si['followerCount'].toString()
+        : si['followers'] as String?;
+    final niche = si['niche'] as String?;
+    final samplePostLink = si['samplePostLink'] as String?;
+
     return _RoleRequest(
       id: reqDoc.id,
       userId: d['userId'] as String? ?? '',
@@ -91,13 +118,14 @@ class _RoleRequest {
           (d['submittedAt'] as Timestamp?)?.toDate() ??
           (d['createdAt'] as Timestamp?)?.toDate(),
       accountCreatedAt: accountCreatedAt,
-      experience: d['experience'] as String?,
-      skills: d['skills'] as String?,
-      resumeLink: d['resumeLink'] as String?,
-      platform: d['platform'] as String?,
-      handle: d['handle'] as String?,
-      followers: d['followers'] as String?,
-      niche: d['niche'] as String?,
+      experience: experience,
+      skills: skills,
+      resumeLink: resumeLink,
+      platform: platform,
+      handle: handle,
+      followers: followers,
+      niche: niche,
+      samplePostLink: samplePostLink,
       adminNotes: d['adminNotes'] as String?,
     );
   }
@@ -1264,6 +1292,14 @@ class _RequestDetailScreenState extends State<_RequestDetailScreen> {
         ],
         if (req.niche != null && req.niche!.isNotEmpty)
           _supportingRow(Icons.category_outlined, 'Niche', req.niche!),
+        if (req.samplePostLink != null && req.samplePostLink!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _supportingRow(
+            Icons.link_rounded,
+            'Sample Post Link',
+            req.samplePostLink!,
+          ),
+        ],
       ],
     );
   }
