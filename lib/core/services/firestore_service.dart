@@ -4,12 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/providers/auth_provider.dart';
-import './admin/admin_user_management.dart';
-import './admin/admin_referral_approval.dart';
-import './admin/admin_task_approval.dart';
-import './admin/admin_role_requests.dart';
-import './admin/admin_settings.dart';
-import './admin/admin_analytics.dart';
+import '../../features/dashboard/screens/admin/admin_user_management.dart';
+import '../../features/dashboard/screens/admin/admin_referral_approval.dart';
+import '../../features/dashboard/screens/admin/admin_task_approval.dart';
+import '../../features/dashboard/screens/admin/admin_role_requests.dart';
+import '../../features/dashboard/screens/admin/admin_settings.dart';
+import '../../features/dashboard/screens/admin/admin_analytics.dart';
 
 // ─── Stat card spec ───────────────────────────────────────────────────────────
 class _Card {

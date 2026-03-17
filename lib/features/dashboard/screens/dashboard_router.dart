@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/models/user_model.dart';
-import '../../../core/widgets/role_change_listener.dart';
 import 'admin_dashboard.dart';
 import 'customer_dashboard.dart';
 import 'employee_dashboard.dart';
@@ -16,22 +15,16 @@ class DashboardRouter extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
 
-    // Still loading user from Firestore — show a neutral splash
     if (authState.isLoading || authState.status == AuthStatus.initial) {
       return const _LoadingScreen();
     }
 
-    // Not authenticated — should not reach here (main.dart handles it)
     if (!authState.isAuthenticated || authState.user == null) {
       return const _LoadingScreen();
     }
 
     final user = authState.user!;
-
-    // RoleChangeListener wraps the entire dashboard tree so it can intercept
-    // live role-change events from Firestore and show a congratulations dialog
-    // the moment the admin approves a request — no restart or logout needed.
-    return RoleChangeListener(child: _buildDashboard(user));
+    return _buildDashboard(user);
   }
 
   Widget _buildDashboard(UserModel user) {
@@ -101,7 +94,6 @@ class _PendingApprovalScreen extends ConsumerWidget {
             children: [
               const Spacer(),
 
-              // Hourglass icon
               Container(
                 width: 96,
                 height: 96,
@@ -144,12 +136,8 @@ class _PendingApprovalScreen extends ConsumerWidget {
 
               const SizedBox(height: 40),
 
-              // "Use as Customer" tile — navigates to customer dashboard
               GestureDetector(
                 onTap: () {
-                  // Temporarily override the view by pushing the customer
-                  // dashboard on top — the user is still technically the
-                  // pending role but can browse as a customer in the meantime.
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const CustomerDashboardScreen(),
@@ -206,7 +194,6 @@ class _PendingApprovalScreen extends ConsumerWidget {
 
               const SizedBox(height: 12),
 
-              // Status pill
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -242,7 +229,6 @@ class _PendingApprovalScreen extends ConsumerWidget {
 
               const Spacer(),
 
-              // Sign out
               TextButton.icon(
                 onPressed: () async {
                   await ref.read(authProvider.notifier).signOut();
