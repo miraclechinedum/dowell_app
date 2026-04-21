@@ -1,7 +1,7 @@
 name: dowell_app
 description: ""
 
-publish_to: 'none' 
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
@@ -15,23 +15,24 @@ dependencies:
   firebase_auth: ^5.3.0
   cloud_firestore: ^5.6.12
   firebase_storage: ^12.4.10
-  
-  # State Management (Riverpod - easier than Provider)
-  flutter_riverpod: ^2.4.9
 
-   # Image Picking
+  # State Management (Riverpod - easier than Provider)
+  flutter_riverpod:
+    ^2.4.9
+
+    # Image Picking
   image_picker: ^1.0.4
-  
+
   # Other utilities
   cached_network_image: ^3.3.0
   path_provider: ^2.1.0
-  
+
   # Form validation
   form_validator: ^1.0.0
 
   # Phone validation
   phone_form_field: 10.0.17
-  
+
   # Loading indicators
   loading_animation_widget: ^1.2.0
 
@@ -41,9 +42,22 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.7
 
 flutter:
   uses-material-design: true
 
   assets:
     - assets/images/dowell_logo.png
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/dowell_logo.png"
+  remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#ffffff"
+  image: assets/images/dowell_logo.png
+  fullscreen: true
