@@ -46,7 +46,18 @@ void main() async {
     ),
   );
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Firebase initialization timed out'),
+    );
+  } catch (e) {
+    // If Firebase fails, still run the app but with error state
+    print('Firebase initialization failed: $e');
+  }
+
   runApp(const ProviderScope(child: MyApp()));
 }
 

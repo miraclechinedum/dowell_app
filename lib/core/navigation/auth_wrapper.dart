@@ -20,6 +20,62 @@ class AuthWrapper extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authProvider);
 
+    // ── Error state ───────────────────────────────────────────────────────────
+    if (authState.status == AuthStatus.error) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF1B5E20),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: const Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: Colors.red,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                const Text(
+                  'Something went wrong',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  authState.error ?? 'An unexpected error occurred.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                ElevatedButton(
+                  onPressed: () {
+                    // Attempt to retry by triggering a refresh
+                    ref.refresh(authProvider);
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     // ── Still initialising / loading user document from Firestore ────────────
     // This is the critical fix: we must NOT route until isLoading is false
     // AND status is no longer "initial". Previously, routing happened before
@@ -61,8 +117,33 @@ class AuthWrapper extends ConsumerWidget {
 }
 
 // ── Splash / loading screen shown while auth + Firestore loads ────────────────
-class _SplashScreen extends StatelessWidget {
+class _SplashScreen extends StatefulWidget {
   const _SplashScreen();
+
+  @override
+  State<_SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<_SplashScreen> {
+  late final Timer _timeoutTimer;
+  bool _isTimedOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // If loading takes more than 20 seconds, something is wrong
+    _timeoutTimer = Timer(const Duration(seconds: 20), () {
+      if (mounted) {
+        setState(() => _isTimedOut = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timeoutTimer.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,22 +181,47 @@ class _SplashScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              'Loading your account...',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
-                fontSize: 14,
+            if (!_isTimedOut)
+              Text(
+                'Loading your account...',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.6),
+                  fontSize: 14,
+                ),
+              )
+            else
+              Text(
+                'Taking longer than expected...',
+                style: TextStyle(
+                  color: Colors.orange.withOpacity(0.8),
+                  fontSize: 14,
+                ),
               ),
-            ),
             const SizedBox(height: 40),
             SizedBox(
               width: 32,
               height: 32,
               child: CircularProgressIndicator(
-                color: Colors.white.withOpacity(0.8),
+                color: _isTimedOut
+                    ? Colors.orange
+                    : Colors.white.withOpacity(0.8),
                 strokeWidth: 2.5,
               ),
             ),
+            if (_isTimedOut)
+              Column(
+                children: [
+                  const SizedBox(height: 24),
+                  Text(
+                    'Check your internet connection and restart the app.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),

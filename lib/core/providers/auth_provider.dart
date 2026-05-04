@@ -1,4 +1,5 @@
 // lib/core/providers/auth_provider.dart
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -102,7 +103,11 @@ class AuthProvider extends StateNotifier<AuthState> {
       await firebaseUser.reload();
       final isEmailVerified = firebaseUser.emailVerified;
 
-      final userModel = await _getOrCreateUserDocument(firebaseUser);
+      // Add timeout to prevent indefinite hanging on Firestore
+      final userModel = await _getOrCreateUserDocument(firebaseUser).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException('User data fetch timed out'),
+      );
 
       _analytics.logLogin(userId: userModel.id, role: userModel.role.name);
 
@@ -121,7 +126,16 @@ class AuthProvider extends StateNotifier<AuthState> {
         error: e,
         stackTrace: stackTrace,
       );
-      _updateStateError('Failed to load user data: ${e.toString()}');
+
+      // Provide more helpful error messages
+      String errorMsg = 'Failed to load user data';
+      if (e is TimeoutException) {
+        errorMsg = 'Connection timeout. Check your internet and try again.';
+      } else if (e.toString().contains('permission-denied')) {
+        errorMsg = 'Access denied. Please contact support.';
+      }
+
+      _updateStateError(errorMsg);
     }
   }
 
