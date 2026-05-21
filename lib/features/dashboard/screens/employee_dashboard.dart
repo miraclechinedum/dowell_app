@@ -58,6 +58,11 @@ class EmployeeDashboardScreen extends ConsumerWidget {
             },
           ),
           IconButton(
+            icon: const Icon(Icons.settings, color: AppColors.textDark),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout, color: AppColors.textDark),
             onPressed: () => _logoutUser(context, ref),
           ),

@@ -30,15 +30,65 @@ import 'features/dashboard/screens/employee/employee_submit_task_screen.dart';
 import 'features/dashboard/screens/employee/employee_tasks_list_screen.dart';
 import 'features/dashboard/screens/employee/employee_cashout_screen.dart';
 
+import 'features/settings/screens/settings_screen.dart';
+
 import 'core/providers/auth_provider.dart';
 import 'core/services/employee_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp();
+  Object? firebaseInitError;
+  try {
+    await Firebase.initializeApp();
+  } catch (e, st) {
+    firebaseInitError = e;
+    debugPrint('Firebase init failed: $e\n$st');
+  }
 
-  runApp(const ProviderScope(child: MyApp()));
+  runApp(
+    ProviderScope(
+      child: firebaseInitError == null
+          ? const MyApp()
+          : _StartupErrorApp(error: firebaseInitError),
+    ),
+  );
+}
+
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp({required this.error});
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 56, color: Colors.red),
+                const SizedBox(height: 16),
+                const Text(
+                  'Couldn’t start the app',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '$error',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -75,6 +125,7 @@ class MyApp extends StatelessWidget {
         '/register': (context) => const RegisterScreen(),
         '/role-request': (context) => const RoleRequestScreen(),
         '/pending-approval': (context) => const PendingApprovalScreen(),
+        '/settings': (context) => const SettingsScreen(),
 
         '/customer/dashboard': (context) => const CustomerDashboardScreen(),
         '/submit-referral': (context) => const SubmitReferralScreen(),

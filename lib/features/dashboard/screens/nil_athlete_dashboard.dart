@@ -39,6 +39,11 @@ class _NilAthleteDashboardScreenState
         elevation: 0,
         actions: [
           IconButton(
+            icon: const Icon(Icons.settings, color: AppColors.textDark),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout, color: AppColors.textDark),
             onPressed: () => _logoutUser(context),
           ),

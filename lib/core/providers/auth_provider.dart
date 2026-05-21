@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../services/account_deletion_service.dart';
+
 enum AuthStatus { authenticated, unauthenticated, loading, error }
 
 class AuthState {
@@ -266,6 +268,47 @@ class AuthProvider extends StateNotifier<AuthState> {
     return logout();
   }
 
+  /// Permanently deletes the signed-in user's account and all associated data.
+  ///
+  /// Firestore data is removed first (while the user is still authenticated and
+  /// owner security rules apply), then the Firebase Authentication account is
+  /// deleted so the user can never sign back in.
+  ///
+  /// Throws [FirebaseAuthException] with code `requires-recent-login` when the
+  /// caller must re-authenticate (see [reauthenticateWithPassword]) before the
+  /// auth account can be deleted. The data deletion step is idempotent, so it
+  /// is safe to call this method again after re-authenticating.
+  Future<void> deleteAccount() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'no-current-user',
+        message: 'No signed-in user to delete.',
+      );
+    }
+
+    // 1. Remove all Firestore data owned by the user.
+    await AccountDeletionService.deleteUserData(user.uid);
+
+    // 2. Delete the authentication account. May throw requires-recent-login.
+    await AccountDeletionService.deleteAuthAccount();
+
+    // authStateChanges() will also fire with null, but update eagerly so the
+    // UI reflects the signed-out state immediately.
+    state = const AuthState(status: AuthStatus.unauthenticated);
+    print("✅ Account deleted successfully");
+  }
+
+  /// Re-authenticates the current user with their [password] so that a
+  /// `requires-recent-login` error can be resolved before account deletion.
+  Future<void> reauthenticateWithPassword(String password) async {
+    try {
+      await AccountDeletionService.reauthenticateWithPassword(password);
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_getErrorMessage(e.code));
+    }
+  }
+
   Future<void> loginWithEmail({
     required String email,
     required String password,
@@ -306,6 +349,10 @@ class AuthProvider extends StateNotifier<AuthState> {
         return 'No user found for that email.';
       case 'wrong-password':
         return 'Wrong password provided.';
+      case 'invalid-credential':
+        return 'Incorrect password. Please try again.';
+      case 'requires-recent-login':
+        return 'Please re-enter your password to continue.';
       case 'too-many-requests':
         return 'Too many attempts. Try again later.';
       default:

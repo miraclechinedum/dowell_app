@@ -673,6 +673,14 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             },
           ),
           ListTile(
+            leading: const Icon(Icons.manage_accounts, color: Colors.grey),
+            title: const Text('Account Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/settings');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Logout'),
             onTap: () => _logoutUser(context, ref),
