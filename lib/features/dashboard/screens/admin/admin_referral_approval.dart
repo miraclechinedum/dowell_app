@@ -29,10 +29,6 @@ class _AdminReferralApprovalScreenState
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: _showFilterDialog,
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => setState(() {}),
           ),
@@ -40,19 +36,28 @@ class _AdminReferralApprovalScreenState
       ),
       body: Column(
         children: [
-          // Filter Tabs
-          Container(
-            color: Colors.white,
-            child: Row(
-              children: [
-                _buildFilterTab('pending', 'Pending', Colors.orange),
-                _buildFilterTab('contacted', 'Contacted', Colors.blue),
-                _buildFilterTab('converted', 'Converted', Colors.green),
-                _buildFilterTab('rejected', 'Rejected', Colors.red),
-              ],
+          /// Stats summary — Total / Pending / Converted, each its own card.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: _buildStatsSummary(),
+          ),
+
+          /// Filter pill chips — same visual language as the customer + employee lists.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  _buildFilterChip('pending', 'Pending'),
+                  _buildFilterChip('contacted', 'Contacted'),
+                  _buildFilterChip('converted', 'Converted'),
+                  _buildFilterChip('rejected', 'Rejected'),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 8),
           // Referrals List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
@@ -118,52 +123,141 @@ class _AdminReferralApprovalScreenState
     );
   }
 
-  Widget _buildFilterTab(String value, String label, Color color) {
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _selectedFilter = value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: _selectedFilter == value
-                ? color.withOpacity(0.1)
-                : Colors.transparent,
-            border: Border(
-              bottom: BorderSide(
-                color: _selectedFilter == value ? color : Colors.transparent,
-                width: 2,
+  /// Pill-shaped filter chip — same visual style as the customer/employee lists.
+  Widget _buildFilterChip(String value, String label) {
+    final isSelected = _selectedFilter == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (_) => setState(() => _selectedFilter = value),
+        backgroundColor: Colors.white,
+        selectedColor: const Color(0xFF2E7D32).withOpacity(0.15),
+        side: BorderSide(
+          color: isSelected
+              ? const Color(0xFF2E7D32)
+              : Colors.grey.shade300,
+        ),
+        labelStyle: TextStyle(
+          color: isSelected ? const Color(0xFF2E7D32) : const Color(0xFF2C3E50),
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+        ),
+        checkmarkColor: const Color(0xFF2E7D32),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+    );
+  }
+
+  /// Three icon-pill stat cards — Pending (queue size), Converted (success
+  /// metric), and total Referrals — drawn from a single batched count fetch
+  /// so the row doesn't fan out into multiple separate Firestore reads.
+  Widget _buildStatsSummary() {
+    return FutureBuilder<List<int>>(
+      future: _fetchStatsCounts(),
+      builder: (context, snapshot) {
+        final counts = snapshot.data ?? const [0, 0, 0];
+        return Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                label: 'Total',
+                value: counts[0].toString(),
+                color: const Color(0xFF2E7D32),
+                icon: Icons.people,
               ),
             ),
-          ),
-          child: Column(
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: _selectedFilter == value ? color : Colors.grey,
-                  fontWeight: FontWeight.w600,
-                ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildStatCard(
+                label: 'Pending',
+                value: counts[1].toString(),
+                color: Colors.orange,
+                icon: Icons.hourglass_top,
               ),
-              FutureBuilder(
-                future: _firestore
-                    .collection('referrals')
-                    .where('status', isEqualTo: value)
-                    .get(),
-                builder: (context, snapshot) {
-                  final count = snapshot.data?.docs.length ?? 0;
-                  return Text(
-                    count.toString(),
-                    style: TextStyle(
-                      color: _selectedFilter == value ? color : Colors.grey,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  );
-                },
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildStatCard(
+                label: 'Converted',
+                value: counts[2].toString(),
+                color: Colors.green,
+                icon: Icons.check_circle,
               ),
-            ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Returns [totalReferrals, pendingCount, convertedCount].
+  Future<List<int>> _fetchStatsCounts() async {
+    try {
+      final results = await Future.wait([
+        _firestore.collection('referrals').count().get(),
+        _firestore
+            .collection('referrals')
+            .where('status', isEqualTo: 'pending')
+            .count()
+            .get(),
+        _firestore
+            .collection('referrals')
+            .where('status', isEqualTo: 'converted')
+            .count()
+            .get(),
+      ]);
+      return [
+        results[0].count ?? 0,
+        results[1].count ?? 0,
+        results[2].count ?? 0,
+      ];
+    } catch (_) {
+      return const [0, 0, 0];
+    }
+  }
+
+  Widget _buildStatCard({
+    required String label,
+    required String value,
+    required Color color,
+    required IconData icon,
+  }) {
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 18),
           ),
-        ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: color,
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF2C3E50),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -633,13 +727,4 @@ class _AdminReferralApprovalScreenState
     );
   }
 
-  void _showFilterDialog() {
-    // Implement advanced filtering if needed
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Advanced filtering coming soon!'),
-        backgroundColor: Color(0xFF2E7D32),
-      ),
-    );
-  }
 }

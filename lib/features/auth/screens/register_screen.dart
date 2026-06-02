@@ -1,8 +1,12 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/legal_urls.dart';
 import '../../../core/widgets/form_text_field.dart';
+import '../../../core/widgets/logo_image.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/providers/auth_provider.dart';
 
@@ -104,30 +108,39 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 20),
-
-              // Create account text
-              const Text(
-                'Create Account',
-                style: TextStyle(
-                  color: AppColors.textDark,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
+              /// Centered brand header
+              Center(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    const LogoImage(size: 64),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Create Account',
+                      style: TextStyle(
+                        color: AppColors.textDark,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Sign up to start earning rewards',
+                      style: TextStyle(
+                        color: AppColors.textNeutral,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
-              const SizedBox(height: 8),
-
-              const Text(
-                'Sign up to start earning rewards',
-                style: TextStyle(color: AppColors.textNeutral, fontSize: 16),
-              ),
-
-              const SizedBox(height: 40),
+              const SizedBox(height: 28),
 
               // Show error if any
               if (authState.error != null)
@@ -136,7 +149,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                     color: AppColors.error.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: AppColors.error.withOpacity(0.3),
                       width: 1,
@@ -144,7 +157,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.error_outline,
                         color: AppColors.error,
                         size: 20,
@@ -153,7 +166,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       Expanded(
                         child: Text(
                           authState.error!,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: AppColors.error,
                             fontSize: 14,
                           ),
@@ -248,8 +261,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       },
                     ),
 
-                    const SizedBox(height: 16),
-
                     // Password Requirements
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -264,15 +275,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Password Requirements:',
                             style: TextStyle(
                               color: AppColors.textDark,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                               fontSize: 14,
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 10),
 
                           _buildRequirementRow(
                             'At least 8 characters',
@@ -295,64 +306,77 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 8),
 
-                    // Terms Checkbox
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppColors.buttonBorder,
-                          width: 1,
-                        ),
+                    // Terms Checkbox — tappable whole row, checkbox aligned
+                    // with the first text line so multi-line copy reads cleanly.
+                    InkWell(
+                      onTap: () => setState(
+                        () => _termsAccepted = !_termsAccepted,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _termsAccepted
+                                ? AppColors.primary
+                                : AppColors.buttonBorder,
+                            width: _termsAccepted ? 1.4 : 1,
+                          ),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(12, 14, 14, 14),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Checkbox(
-                              value: _termsAccepted,
-                              onChanged: (value) {
-                                setState(() {
-                                  _termsAccepted = value ?? false;
-                                });
-                              },
-                              activeColor: AppColors.primary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
+                            SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: Checkbox(
+                                value: _termsAccepted,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _termsAccepted = value ?? false;
+                                  });
+                                },
+                                activeColor: AppColors.primary,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
                               ),
                             ),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: RichText(
                                 text: TextSpan(
-                                  style: TextStyle(
-                                    color: AppColors.textNeutral,
-                                    fontSize: 14,
-                                    height: 1.4,
+                                  style: const TextStyle(
+                                    color: AppColors.textDark,
+                                    fontSize: 13,
+                                    height: 1.45,
                                   ),
                                   children: [
                                     const TextSpan(text: 'I agree to the '),
                                     TextSpan(
-                                      text: 'Terms of Service',
-                                      style: const TextStyle(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w600,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                    ),
-                                    const TextSpan(text: ' and '),
-                                    TextSpan(
                                       text: 'Privacy Policy',
                                       style: const TextStyle(
                                         color: AppColors.primary,
-                                        fontWeight: FontWeight.w600,
+                                        fontWeight: FontWeight.w700,
                                         decoration: TextDecoration.underline,
                                       ),
+                                      recognizer: TapGestureRecognizer()
+                                        ..onTap = () =>
+                                            _openUrl(LegalUrls.privacyPolicy),
                                     ),
                                     const TextSpan(
                                       text:
                                           '. I understand that my data will be processed in accordance with Dowell\'s privacy policy.',
+                                      style: TextStyle(
+                                        color: AppColors.textNeutral,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -377,73 +401,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           : () {},
                     ),
 
-                    const SizedBox(height: 32),
-
-                    // Divider with "or"
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Divider(
-                            color: AppColors.textNeutral.withOpacity(0.3),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text(
-                            'or sign up with',
-                            style: TextStyle(color: AppColors.textNeutral),
-                          ),
-                        ),
-                        Expanded(
-                          child: Divider(
-                            color: AppColors.textNeutral.withOpacity(0.3),
-                          ),
-                        ),
-                      ],
-                    ),
-
                     const SizedBox(height: 24),
-
-                    // Social Registration Buttons
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // Google
-                        _buildSocialButton(
-                          icon: Icons.g_mobiledata,
-                          color: const Color(0xFFDB4437),
-                          onPressed: () => _socialRegister('Google', context),
-                        ),
-
-                        const SizedBox(width: 16),
-
-                        // Facebook
-                        _buildSocialButton(
-                          icon: Icons.facebook,
-                          color: const Color(0xFF4267B2),
-                          onPressed: () => _socialRegister('Facebook', context),
-                        ),
-
-                        const SizedBox(width: 16),
-
-                        // Apple
-                        _buildSocialButton(
-                          icon: Icons.apple,
-                          color: Colors.black,
-                          onPressed: () => _socialRegister('Apple', context),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 32),
 
                     // Already have account
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          "Already have an account? ",
-                          style: TextStyle(color: AppColors.textNeutral),
+                        const Text(
+                          'Already have an account? ',
+                          style: TextStyle(
+                            color: AppColors.textNeutral,
+                            fontSize: 14,
+                          ),
                         ),
                         GestureDetector(
                           onTap: () => Navigator.pop(context),
@@ -451,7 +420,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                             'Sign in here',
                             style: TextStyle(
                               color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
                             ),
                           ),
                         ),
@@ -469,20 +439,21 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   Widget _buildRequirementRow(String text, bool isMet) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
           Icon(
             isMet ? Icons.check_circle : Icons.circle_outlined,
             color: isMet ? AppColors.success : AppColors.textNeutral,
-            size: 16,
+            size: 18,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Text(
             text,
             style: TextStyle(
               color: isMet ? AppColors.success : AppColors.textNeutral,
-              fontSize: 12,
+              fontSize: 13,
+              fontWeight: isMet ? FontWeight.w600 : FontWeight.w500,
             ),
           ),
         ],
@@ -490,31 +461,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     );
   }
 
-  Widget _buildSocialButton({
-    required IconData icon,
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.buttonBorder, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: IconButton(
-        onPressed: onPressed,
-        icon: Icon(icon, color: color, size: 24),
-      ),
-    );
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open $url'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Future<void> _register(BuildContext context) async {
@@ -524,7 +481,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     if (!_termsAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please accept the Terms and Privacy Policy'),
+          content: Text('Please accept the Privacy Policy'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -565,12 +522,4 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
   }
 
-  void _socialRegister(String platform, BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$platform registration coming soon!'),
-        backgroundColor: AppColors.primary,
-      ),
-    );
-  }
 }

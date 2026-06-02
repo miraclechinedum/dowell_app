@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/legal_urls.dart';
 import '../../../core/widgets/logo_image.dart';
-import '../../../core/widgets/cta_buttons.dart';
-import 'login_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -251,25 +252,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             color: AppColors.textNeutral.withOpacity(0.7),
                             height: 1.4,
                           ),
-                          children: const [
-                            TextSpan(
+                          children: [
+                            const TextSpan(
                               text:
                                   'Clicking "Get Started" means you agree to our ',
                             ),
                             TextSpan(
-                              text: 'Terms',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
-                            TextSpan(text: ' and '),
-                            TextSpan(
                               text: 'Privacy Policy',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                                 decoration: TextDecoration.underline,
                               ),
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () =>
+                                    _openUrl(LegalUrls.privacyPolicy),
                             ),
                           ],
                         ),
@@ -286,6 +282,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open $url'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   void _navigateToLogin(BuildContext context) {

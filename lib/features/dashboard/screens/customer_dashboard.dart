@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/providers/auth_provider.dart';
@@ -11,6 +12,60 @@ import '../../../core/widgets/primary_button.dart';
 // Import customer screens
 import './customer/submit_referral_screen.dart';
 import './customer/referrals_list_screen.dart';
+
+/// Live customer stats backed by Firestore. Returns the user's Bug Bucks
+/// balance from `users/{uid}` and counts of their referrals grouped by status.
+///
+/// Each Firestore call is wrapped independently so that a single failure
+/// (permission-denied, network blip, missing doc) degrades to a zero in
+/// that field instead of throwing and forcing the dashboard into the
+/// error-fallback state.
+final customerStatsProvider =
+    FutureProvider.autoDispose<Map<String, int>>((ref) async {
+  final user = ref.watch(authProvider).user;
+  if (user == null) {
+    return const {
+      'bugBucks': 0,
+      'pendingReferrals': 0,
+      'convertedReferrals': 0,
+    };
+  }
+
+  final firestore = FirebaseFirestore.instance;
+
+  int bugBucks = 0;
+  try {
+    final userDoc = await firestore.collection('users').doc(user.uid).get();
+    bugBucks = (userDoc.data()?['bugBucks'] as num?)?.toInt() ?? 0;
+  } catch (_) {
+    // Fall through with bugBucks = 0.
+  }
+
+  int pending = 0;
+  int converted = 0;
+  try {
+    final referralsSnap = await firestore
+        .collection('referrals')
+        .where('customerId', isEqualTo: user.uid)
+        .get();
+
+    for (final doc in referralsSnap.docs) {
+      final status = (doc.data()['status'] as String?) ?? '';
+      // "contacted" is mid-pipeline work, surface it as Pending on the
+      // dashboard so customers see their in-progress referrals.
+      if (status == 'pending' || status == 'contacted') pending++;
+      if (status == 'converted') converted++;
+    }
+  } catch (_) {
+    // Fall through with pending = converted = 0.
+  }
+
+  return {
+    'bugBucks': bugBucks,
+    'pendingReferrals': pending,
+    'convertedReferrals': converted,
+  };
+});
 
 class CustomerDashboardScreen extends ConsumerStatefulWidget {
   const CustomerDashboardScreen({super.key});
@@ -30,11 +85,7 @@ class _CustomerDashboardScreenState
     final userEmail = user?.email ?? 'Customer';
     final userName = user?.displayName ?? userEmail.split('@').first;
 
-    // Mock data
-    final bugBucks = 1250;
-    final pendingReferrals = 2;
-    const convertedReferrals = 8;
-    const totalEarned = 2500;
+    final statsAsync = ref.watch(customerStatsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -60,24 +111,39 @@ class _CustomerDashboardScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              /// Welcome Header
+              /// Welcome Header — cream card with green avatar + Customer chip.
               AppCard(
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
                         Container(
-                          width: 60,
-                          height: 60,
+                          width: 64,
+                          height: 64,
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(30),
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFF388E3C),
+                                Color(0xFF1B5E20),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(32),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.25),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
                           ),
                           child: const Icon(
                             Icons.person,
-                            color: AppColors.primary,
-                            size: 32,
+                            color: Colors.white,
+                            size: 34,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -85,20 +151,50 @@ class _CustomerDashboardScreenState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Welcome, $userName!',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textDark,
-                                ),
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      'Welcome, $userName!',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textDark,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 userEmail,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   color: AppColors.textNeutral,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'CUSTOMER',
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
+                                  ),
                                 ),
                               ),
                             ],
@@ -108,10 +204,12 @@ class _CustomerDashboardScreenState
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      'Earn Bug Bucks by referring friends and family',
+                      'Refer friends and family to earn Bug Bucks toward your '
+                      'next Dowell pest-control service.',
                       style: TextStyle(
                         fontSize: 14,
                         color: AppColors.textNeutral,
+                        height: 1.4,
                       ),
                     ),
                   ],
@@ -122,22 +220,24 @@ class _CustomerDashboardScreenState
 
               /// Role Upgrade Request Card
               AppCard(
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
                     const Text(
                       'Want More Features?',
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.textDark,
                       ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Request access to Employee, NIL Athlete, or Admin features',
+                      'Apply to join the Dowell field team as an employee.',
                       style: TextStyle(
                         fontSize: 14,
                         color: AppColors.textNeutral,
+                        height: 1.4,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -168,156 +268,22 @@ class _CustomerDashboardScreenState
 
               const SizedBox(height: 20),
 
-              /// Bug Bucks Balance - FIXED LAYOUT
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Bug Bucks Balance',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: AppColors.textNeutral,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // FIX: Wrap the Row in a Container with constraints
-                    Container(
-                      constraints: const BoxConstraints(
-                        maxWidth: double.infinity,
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  bugBucks.toString(),
-                                  style: const TextStyle(
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                                Text(
-                                  'Bug Bucks',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // FIX: Give the button a fixed width or use IntrinsicWidth
-                          SizedBox(
-                            width: 120, // Fixed width for the button
-                            child: PrimaryButton(
-                              text: 'Redeem',
-                              onPressed: () => _showRedeemDialog(context),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '1 Bug Buck = \$1.00 value',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textNeutral,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              /// Quick Stats
-              Row(
-                children: [
-                  Expanded(
-                    child: AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Pending',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textNeutral,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            pendingReferrals.toString(),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.orange,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Converted',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textNeutral,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            convertedReferrals.toString(),
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.success,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Total Earned',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textNeutral,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '\$$totalEarned',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+              /// Live stats — hero Bug Bucks card + referral counts row.
+              statsAsync.when(
+                data: (stats) => _buildStatsSection(stats),
+                loading: () => _buildStatsSection(const {
+                  'bugBucks': 0,
+                  'pendingReferrals': 0,
+                  'convertedReferrals': 0,
+                }, isLoading: true),
+                // Provider is now resilient and won't normally throw, but if
+                // it ever does we still render the hero with zeros instead of
+                // showing an apologetic empty card.
+                error: (_, _) => _buildStatsSection(const {
+                  'bugBucks': 0,
+                  'pendingReferrals': 0,
+                  'convertedReferrals': 0,
+                }),
               ),
 
               const SizedBox(height: 20),
@@ -338,26 +304,31 @@ class _CustomerDashboardScreenState
 
                   const SizedBox(height: 12),
 
-                  // View Referrals Button
-                  OutlinedButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ReferralsListScreen(),
+                  // View Referrals Button (full-width to match Submit button)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ReferralsListScreen(),
+                        ),
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                      icon: const Icon(Icons.list_alt, size: 20),
+                      label: const Text(
+                        'View My Referrals',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
-                      side: BorderSide(color: AppColors.primary),
-                    ),
-                    child: const Text(
-                      'View My Referrals',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        side: const BorderSide(
+                          color: AppColors.primary,
+                          width: 1.4,
+                        ),
                       ),
                     ),
                   ),
@@ -399,23 +370,208 @@ class _CustomerDashboardScreenState
     }
   }
 
-  void _showRedeemDialog(BuildContext context) {
-    // Use a post-frame callback to ensure widget is fully built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Redeem Bug Bucks'),
-          content: const Text('Redemption coming soon'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
+  /// Renders the Bug Bucks balance card and the Pending/Converted referral
+  /// stat row from real Firestore data. When [isLoading] is true (initial
+  /// fetch in flight) the values render dimmed instead of jumping in.
+  Widget _buildStatsSection(
+    Map<String, int> stats, {
+    bool isLoading = false,
+  }) {
+    final bugBucks = stats['bugBucks'] ?? 0;
+    final pending = stats['pendingReferrals'] ?? 0;
+    final converted = stats['convertedReferrals'] ?? 0;
+    final hasAny = bugBucks > 0 || pending > 0 || converted > 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        /// Hero Bug Bucks card — green gradient with scattered pattern.
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF388E3C), Color(0xFF1B5E20)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.30),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                // Decorative scattered pattern (same family as the splash).
+                const Positioned.fill(
+                  child: CustomPaint(painter: _BugBucksPatternPainter()),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.account_balance_wallet,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Bug Bucks Balance',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withOpacity(0.92),
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Opacity(
+                            opacity: isLoading ? 0.5 : 1.0,
+                            child: Text(
+                              bugBucks.toString(),
+                              style: const TextStyle(
+                                fontSize: 52,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                height: 1.0,
+                                letterSpacing: -1,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.18),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Text(
+                                'BB',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        hasAny || isLoading
+                            ? 'Redeem with Dowell staff at your next service booking.'
+                            : 'Submit your first referral to start earning.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withOpacity(0.85),
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 14),
+
+        /// Referral counts
+        Row(
+          children: [
+            Expanded(
+              child: _buildReferralStatCard(
+                'Pending Referrals',
+                pending,
+                Colors.orange,
+                Icons.hourglass_top,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _buildReferralStatCard(
+                'Converted Referrals',
+                converted,
+                AppColors.success,
+                Icons.check_circle,
+              ),
             ),
           ],
         ),
-      );
-    });
+      ],
+    );
+  }
+
+  /// Single referral-status stat card — matches the admin-dashboard typography
+  /// pattern (big number top-right, icon-pill top-left, label bottom).
+  Widget _buildReferralStatCard(
+    String label,
+    int value,
+    Color color,
+    IconData icon,
+  ) {
+    return AppCard(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            value.toString(),
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: color,
+              height: 1.0,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDark,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _navigateToRoleRequest(BuildContext context) {
@@ -423,4 +579,35 @@ class _CustomerDashboardScreenState
       Navigator.pushNamed(context, '/role-request');
     });
   }
+}
+
+/// Decorative scattered-circle pattern for the hero Bug Bucks card.
+/// Same visual family as the splash screen — deterministic positions so
+/// the pattern stays stable across rebuilds and at every screen size.
+class _BugBucksPatternPainter extends CustomPainter {
+  const _BugBucksPatternPainter();
+
+  // Each entry: [fx, fy, radiusFactor (of width), alpha].
+  static const List<List<double>> _circles = [
+    [0.92, 0.10, 0.28, 0.07],
+    [0.06, 0.85, 0.22, 0.06],
+    [0.75, 0.75, 0.12, 0.08],
+    [0.40, 0.20, 0.06, 0.09],
+    [0.20, 0.40, 0.04, 0.10],
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final c in _circles) {
+      final paint = Paint()..color = Colors.white.withOpacity(c[3]);
+      canvas.drawCircle(
+        Offset(size.width * c[0], size.height * c[1]),
+        size.width * c[2],
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BugBucksPatternPainter oldDelegate) => false;
 }

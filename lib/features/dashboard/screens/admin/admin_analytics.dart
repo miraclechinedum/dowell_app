@@ -51,15 +51,15 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                 _buildTimeRangeButton('Year', 'year'),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             // Key Metrics
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.2,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+              childAspectRatio: 1.1,
               children: [
                 FutureBuilder<int>(
                   future: _getTotalReferrals(),
@@ -99,24 +99,22 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             // Top Performers
             AppCard(
-              padding: const EdgeInsets.all(
-                16,
-              ), // Added padding to prevent overflow
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Top Referrers',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                       color: Color(0xFF2C3E50),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   FutureBuilder<List<Map<String, dynamic>>>(
                     future: _getTopReferrers(),
                     builder: (context, snapshot) {
@@ -129,121 +127,96 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                         );
                       }
                       if (snapshot.hasError) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(20.0),
-                            child: Text('Error loading data'),
-                          ),
+                        return _buildEmptyState(
+                          icon: Icons.error_outline,
+                          title: 'Couldn\'t load data',
+                          subtitle:
+                              'Pull to refresh or check your connection.',
                         );
                       }
                       final referrers = snapshot.data ?? [];
                       if (referrers.isEmpty) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(20.0),
-                            child: Text('No referral data yet'),
-                          ),
+                        return _buildEmptyState(
+                          icon: Icons.leaderboard_outlined,
+                          title: 'No referral data yet',
+                          subtitle:
+                              'Top referrers will appear here once customers start submitting.',
                         );
                       }
                       return Column(
-                        children: referrers.map((referrer) {
+                        children: List.generate(referrers.length, (i) {
+                          final referrer = referrers[i];
                           return Padding(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 4.0,
-                            ), // Added spacing
-                            child: ListTile(
-                              contentPadding:
-                                  EdgeInsets.zero, // Removed default padding
-                              leading: CircleAvatar(
-                                radius: 20, // Fixed size
-                                child: Text(
-                                  referrer['name'] is String &&
-                                          referrer['name'].isNotEmpty
-                                      ? referrer['name'][0]
-                                      : 'U',
-                                ),
-                              ),
-                              title: Text(
-                                referrer['name'] ?? 'Unknown',
-                                style: TextStyle(
-                                  fontSize:
-                                      14, // Smaller font to prevent overflow
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              subtitle: Text('${referrer['count']} referrals'),
-                              trailing: Chip(
-                                label: Text('${referrer['bugBucks']} BB'),
-                                backgroundColor: const Color(
-                                  0xFF2E7D32,
-                                ).withOpacity(0.1),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ), // Smaller chip
-                              ),
+                            padding: EdgeInsets.only(
+                              top: i == 0 ? 0 : 12,
                             ),
+                            child: _buildReferrerRow(referrer, i + 1),
                           );
-                        }).toList(),
+                        }),
                       );
                     },
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             // Conversion Rate
             AppCard(
-              padding: const EdgeInsets.all(16), // Added padding
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Conversion Rate',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                       color: Color(0xFF2C3E50),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   FutureBuilder<double>(
                     future: _getConversionRate(),
                     builder: (context, snapshot) {
                       final rate = snapshot.data ?? 0.0;
                       return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          LinearProgressIndicator(
-                            value: rate / 100,
-                            backgroundColor: Colors.grey[200],
-                            color: const Color(0xFF2E7D32),
-                            minHeight: 12, // Reduced height to prevent overflow
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          const SizedBox(height: 8),
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
                                 '${rate.toStringAsFixed(1)}%',
                                 style: const TextStyle(
-                                  fontSize: 20, // Smaller font
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF2C3E50),
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF2E7D32),
+                                  height: 1.0,
                                 ),
                               ),
-                              Flexible(
-                                // Wrapped in Flexible to prevent overflow
+                              const SizedBox(width: 10),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
                                 child: Text(
-                                  '${_getTimeRangeLabel()} conversion rate',
+                                  '${_getTimeRangeLabel().toLowerCase()} conversion',
                                   style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
                                     color: Color(0xFF7F8C8D),
-                                    fontSize: 12, // Smaller font
                                   ),
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 16),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: LinearProgressIndicator(
+                              value: rate / 100,
+                              backgroundColor: Colors.grey[200],
+                              color: const Color(0xFF2E7D32),
+                              minHeight: 12,
+                            ),
                           ),
                         ],
                       );
@@ -252,22 +225,22 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             // Activity Timeline
             AppCard(
-              padding: const EdgeInsets.all(16), // Added padding
+              padding: const EdgeInsets.all(18),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     'Recent Activity',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
                       color: Color(0xFF2C3E50),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   FutureBuilder<List<Map<String, dynamic>>>(
                     future: _getRecentActivity(),
                     builder: (context, snapshot) {
@@ -281,51 +254,27 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                       }
                       final activities = snapshot.data ?? [];
                       if (activities.isEmpty) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(20.0),
-                            child: Text('No recent activity'),
-                          ),
+                        return _buildEmptyState(
+                          icon: Icons.history,
+                          title: 'No recent activity',
+                          subtitle:
+                              'Activity will appear here as users interact with the app.',
                         );
                       }
                       return Column(
-                        children: activities.map((activity) {
+                        children: List.generate(activities.length, (i) {
                           return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 4.0),
-                            child: ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(
-                                _getActivityIcon(activity['type']),
-                                color: _getActivityColor(activity['type']),
-                                size: 20, // Smaller icon
-                              ),
-                              title: Text(
-                                activity['description'] ?? 'Activity',
-                                style: const TextStyle(fontSize: 13),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                              subtitle: Text(
-                                activity['time'] ?? '',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                              trailing: Text(
-                                activity['user'] ?? '',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                ), // Smaller font
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                            ),
+                            padding: EdgeInsets.only(top: i == 0 ? 0 : 12),
+                            child: _buildActivityRow(activities[i]),
                           );
-                        }).toList(),
+                        }),
                       );
                     },
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 20),
           ],
         ),
       ),
@@ -333,21 +282,32 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
   }
 
   Widget _buildTimeRangeButton(String label, String value) {
+    final isSelected = _timeRange == value;
     return Expanded(
-      child: SizedBox(
-        // Wrapped in SizedBox with height constraint
-        height: 48, // Fixed height
-        child: ElevatedButton(
-          onPressed: () => setState(() => _timeRange = value),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _timeRange == value
+      child: GestureDetector(
+        onTap: () => setState(() => _timeRange = value),
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected
                 ? const Color(0xFF2E7D32)
                 : Colors.grey[200],
-            foregroundColor: _timeRange == value
-                ? Colors.white
-                : const Color(0xFF2C3E50),
+            borderRadius: BorderRadius.circular(20),
           ),
-          child: Text(label),
+          child: Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.fade,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: isSelected ? Colors.white : const Color(0xFF2C3E50),
+            ),
+          ),
         ),
       ),
     );
@@ -359,45 +319,226 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
     required IconData icon,
     required Color color,
   }) {
-    return SizedBox(
-      // Wrapped in SizedBox with height constraint
-      height: 140, // Fixed height to prevent overflow
-      child: AppCard(
-        padding: const EdgeInsets.all(12), // Added padding
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6), // Reduced padding
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                    height: 1.0,
+                  ),
+                ),
               ),
-              child: Icon(icon, color: color, size: 20), // Smaller icon
-            ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18, // Smaller font
-                fontWeight: FontWeight.w700,
-                color: color,
+              const SizedBox(height: 6),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 11,
-                color: Color(0xFF7F8C8D),
-              ), // Smaller font
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+
+  /// Polished empty/error state shared by Top Referrers and Recent Activity.
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 22),
+      child: Column(
+        children: [
+          Icon(icon, size: 48, color: Colors.grey[300]),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF2C3E50),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[600],
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One row of the Top Referrers list — avatar initial + name/count + BB chip.
+  Widget _buildReferrerRow(Map<String, dynamic> referrer, int rank) {
+    final rawName = referrer['name'];
+    final name = rawName is String && rawName.isNotEmpty ? rawName : 'Unknown';
+    final initial = name[0].toUpperCase();
+    final count = referrer['count'] ?? 0;
+    final bugBucks = referrer['bugBucks'] ?? 0;
+
+    return Row(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2E7D32).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: Text(
+            initial,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF2E7D32),
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '$count referral${count == 1 ? '' : 's'}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF7F8C8D),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2E7D32).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            '$bugBucks BB',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF2E7D32),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// One row of the Recent Activity list — icon pill, description, time, user.
+  Widget _buildActivityRow(Map<String, dynamic> activity) {
+    final type = activity['type'] as String? ?? '';
+    final color = _getActivityColor(type);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            _getActivityIcon(type),
+            color: color,
+            size: 22,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                activity['description']?.toString() ?? 'Activity',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                  height: 1.3,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                activity['time']?.toString() ?? '',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF7F8C8D),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        if ((activity['user'] as String?)?.isNotEmpty ?? false)
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 92),
+            child: Text(
+              activity['user'].toString(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF7F8C8D),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

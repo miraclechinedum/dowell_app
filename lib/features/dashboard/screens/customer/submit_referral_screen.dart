@@ -27,6 +27,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   String? _selectedServiceType;
   bool _isLoading = false;
   bool _formHasChanges = false; // Track form changes manually
+  bool _consentChecked = false; // Apple 5.1.1/5.1.2 — explicit consent gate
   String? _referralCode;
 
   final List<Map<String, dynamic>> _serviceTypes = [
@@ -127,6 +128,19 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a service type'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (!_consentChecked) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please confirm you have permission to share this person\'s information.',
+          ),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
         ),
@@ -367,7 +381,8 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                     const SizedBox(height: 12),
                     const Text(
                       'Submit a referral and earn 100 Bug Bucks immediately. '
-                      'Bug Bucks can be redeemed for discounts or cash rewards.',
+                      'Bug Bucks are redeemable for discounts on your next '
+                      'Dowell pest-control service.',
                       style: TextStyle(color: AppColors.textNeutral),
                     ),
                     const SizedBox(height: 8),
@@ -459,8 +474,6 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                       },
                     ),
 
-                    const SizedBox(height: 16),
-
                     // Referral Email
                     FormTextField(
                       label: 'Email Address *',
@@ -479,93 +492,35 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                       },
                     ),
 
-                    const SizedBox(height: 16),
-
-                    // Referral Phone - Use TextFormField directly for better control
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Phone Number *',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _phoneController,
-                          keyboardType: TextInputType.phone,
-                          decoration: InputDecoration(
-                            hintText: '(123) 456-7890',
-                            prefixIcon: const Icon(Icons.phone),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: AppColors.buttonBorder,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          validator: _validatePhone,
-                        ),
-                      ],
+                    // Referral Phone
+                    FormTextField(
+                      label: 'Phone Number *',
+                      hintText: '(123) 456-7890',
+                      controller: _phoneController,
+                      prefixIcon: const Icon(Icons.phone),
+                      keyboardType: TextInputType.phone,
+                      validator: _validatePhone,
                     ),
 
-                    const SizedBox(height: 16),
-
-                    // Address - Use TextFormField directly for maxLines
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Address *',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _addressController,
-                          maxLines: 2,
-                          decoration: InputDecoration(
-                            hintText: 'Street address, city, state, zip code',
-                            prefixIcon: const Icon(Icons.location_on),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: AppColors.buttonBorder,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter address';
-                            }
-                            if (value.length < 10) {
-                              return 'Please enter a complete address';
-                            }
-                            return null;
-                          },
-                        ),
-                      ],
+                    // Address
+                    FormTextField(
+                      label: 'Address *',
+                      hintText: 'Street address, city, state, zip code',
+                      controller: _addressController,
+                      prefixIcon: const Icon(Icons.location_on),
+                      maxLines: 2,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter address';
+                        }
+                        if (value.length < 10) {
+                          return 'Please enter a complete address';
+                        }
+                        return null;
+                      },
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 4),
 
                     // Service Type Selection
                     const Text(
@@ -652,39 +607,20 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                       },
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 4),
 
                     // Additional Notes
-                    const Text(
-                      'Additional Notes (Optional)',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
+                    FormTextField(
+                      label: 'Additional Notes (Optional)',
+                      hintText:
+                          'Any additional information that might be helpful — '
+                          'e.g. "Prefers evening appointments" or "Has pets at home".',
                       controller: _notesController,
+                      prefixIcon: const Icon(Icons.notes),
                       maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText:
-                            'Any additional information that might be helpful...\n'
-                            'Example: "Prefers evening appointments" or "Has pets at home"',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: AppColors.buttonBorder),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
                     ),
 
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 16),
 
                     // Terms & Conditions
                     Container(
@@ -720,12 +656,53 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
+
+                    /// Mandatory third-party-consent gate (Apple 5.1.1 / 5.1.2)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 4,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            value: _consentChecked,
+                            onChanged: _isLoading
+                                ? null
+                                : (v) =>
+                                      setState(() => _consentChecked = v ?? false),
+                            activeColor: AppColors.primary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(top: 12),
+                              child: Text(
+                                'I confirm I have this person\'s permission to share their name, email, phone, and address with Dowell for the purpose of a service referral.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textDark,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
 
                     // Submit Button
                     PrimaryButton(
                       text: _isLoading ? 'Submitting...' : 'Submit Referral',
-                      onPressed: _isLoading ? null : _submitReferral,
+                      onPressed: (_isLoading || !_consentChecked)
+                          ? null
+                          : _submitReferral,
                       isLoading: _isLoading,
                     ),
 

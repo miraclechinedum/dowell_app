@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/legal_urls.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/widgets/app_card.dart';
 
 /// Shared account settings screen used by every role (customer, employee,
-/// NIL athlete, admin). Hosts the Apple-compliant (Guideline 5.1.1(v))
+/// admin). Hosts the Apple-compliant (Guideline 5.1.1(v))
 /// permanent account deletion flow.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -83,6 +85,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                const Text(
+                  'Legal',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textNeutral,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                AppCard(
+                  padding: EdgeInsets.zero,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    leading: const Icon(
+                      Icons.privacy_tip_outlined,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('Privacy Policy'),
+                    trailing: const Icon(
+                      Icons.open_in_new,
+                      size: 18,
+                      color: AppColors.textNeutral,
+                    ),
+                    onTap: () => _openUrl(LegalUrls.privacyPolicy),
                   ),
                 ),
 
@@ -309,6 +344,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         duration: Duration(seconds: 3),
       ),
     );
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _showError('Could not open $url');
+    }
   }
 
   void _showError(String message) {

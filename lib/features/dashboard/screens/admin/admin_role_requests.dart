@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/providers/auth_provider.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/form_text_field.dart';
 import '../../../../core/widgets/role_badge.dart';
 import '../../../../core/widgets/status_badge.dart';
 
@@ -29,10 +30,6 @@ class _AdminRoleRequestsScreenState
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            onPressed: () => _viewHistory(context),
-          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => setState(() {}),
@@ -365,8 +362,7 @@ class _AdminRoleRequestsScreenState
                   const Spacer(),
                   if (status == 'pending') ...[
                     OutlinedButton(
-                      onPressed: () =>
-                          _rejectRequest(context, userId, requestId),
+                      onPressed: () => _rejectRequest(context, userId),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -385,7 +381,6 @@ class _AdminRoleRequestsScreenState
                         context,
                         userId,
                         requestedRole,
-                        requestId,
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2E7D32),
@@ -455,8 +450,6 @@ class _AdminRoleRequestsScreenState
         return Colors.purple;
       case 'employee':
         return Colors.blue;
-      case 'nil_athlete':
-        return Colors.orange;
       default:
         return const Color(0xFF2E7D32);
     }
@@ -468,8 +461,6 @@ class _AdminRoleRequestsScreenState
         return Icons.admin_panel_settings;
       case 'employee':
         return Icons.badge;
-      case 'nil_athlete':
-        return Icons.sports;
       default:
         return Icons.person;
     }
@@ -479,7 +470,6 @@ class _AdminRoleRequestsScreenState
     BuildContext context,
     String userId,
     String requestedRole,
-    String requestId,
   ) {
     String? notes;
 
@@ -488,24 +478,27 @@ class _AdminRoleRequestsScreenState
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text('Approve Role Request'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              'Approve Role Request',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Approve role upgrade to ${requestedRole.toUpperCase()}?',
-                  style: const TextStyle(fontSize: 16),
+                  style: const TextStyle(fontSize: 15),
                 ),
                 const SizedBox(height: 16),
-                const Text('Notes (optional):'),
-                TextField(
+                FormTextField(
+                  label: 'Notes (optional)',
+                  hintText: 'Add approval notes…',
                   maxLines: 3,
                   onChanged: (value) => setState(() => notes = value),
-                  decoration: const InputDecoration(
-                    hintText: 'Add approval notes...',
-                    border: OutlineInputBorder(),
-                  ),
                 ),
               ],
             ),
@@ -521,12 +514,11 @@ class _AdminRoleRequestsScreenState
                 onPressed: () async {
                   Navigator.pop(context);
                   await _processRoleRequest(
-                    context,
-                    userId,
-                    requestedRole,
-                    requestId,
-                    true,
-                    notes,
+                    context: context,
+                    userId: userId,
+                    newRole: requestedRole,
+                    isApproved: true,
+                    notes: notes,
                   );
                 },
                 child: const Text(
@@ -541,7 +533,7 @@ class _AdminRoleRequestsScreenState
     );
   }
 
-  void _rejectRequest(BuildContext context, String userId, String requestId) {
+  void _rejectRequest(BuildContext context, String userId) {
     String? reason;
 
     showDialog(
@@ -549,23 +541,27 @@ class _AdminRoleRequestsScreenState
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: const Text('Reject Role Request'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              'Reject Role Request',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Are you sure you want to reject this request?'),
+                const Text(
+                  'Are you sure you want to reject this request?',
+                  style: TextStyle(fontSize: 15),
+                ),
                 const SizedBox(height: 16),
-                const Text('Reason:'),
-                TextField(
+                FormTextField(
+                  label: 'Reason *',
+                  hintText: 'Enter rejection reason…',
                   maxLines: 3,
                   onChanged: (value) => setState(() => reason = value),
-                  decoration: const InputDecoration(
-                    hintText: 'Enter rejection reason...',
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Color(0xFFFEE),
-                  ),
                 ),
               ],
             ),
@@ -589,12 +585,11 @@ class _AdminRoleRequestsScreenState
 
                   Navigator.pop(context);
                   await _processRoleRequest(
-                    context,
-                    userId,
-                    null,
-                    requestId,
-                    false,
-                    reason,
+                    context: context,
+                    userId: userId,
+                    newRole: null,
+                    isApproved: false,
+                    notes: reason,
                   );
                 },
                 child: const Text(
@@ -609,54 +604,40 @@ class _AdminRoleRequestsScreenState
     );
   }
 
-  Future<void> _processRoleRequest(
-    BuildContext context,
-    String userId,
-    String? newRole,
-    String requestId,
-    bool isApproved,
+  /// Delegates to the shared [AuthProvider] role-management methods so that
+  /// the user-doc update, the role_requests audit doc update, and the
+  /// admin attribution all live in one canonical place (no inline Firestore
+  /// duplication of the same logic across screens).
+  Future<void> _processRoleRequest({
+    required BuildContext context,
+    required String userId,
+    required String? newRole,
+    required bool isApproved,
     String? notes,
-  ) async {
+  }) async {
+    setState(() => _isLoading = true);
+
+    final adminId = ref.read(authProvider).user?.uid ?? '';
+    final messenger = ScaffoldMessenger.of(context);
+
     try {
-      setState(() => _isLoading = true);
-
-      final adminId = ref.read(authProvider).user?.uid ?? '';
-
       if (isApproved && newRole != null) {
-        // Update user role
-        await _firestore.collection('users').doc(userId).update({
-          'role': newRole,
-          'needsVerification': false,
-          'requestedRole': null,
-          'status': 'active',
-          'approvedBy': adminId,
-          'approvedAt': FieldValue.serverTimestamp(),
-          'approvalNotes': notes,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        await ref.read(authProvider.notifier).approveRoleChange(
+              userId: userId,
+              newRole: newRole,
+              adminId: adminId,
+              notes: notes,
+            );
       } else {
-        // Reject role request
-        await _firestore.collection('users').doc(userId).update({
-          'needsVerification': false,
-          'requestedRole': null,
-          'status': 'active',
-          'rejectedBy': adminId,
-          'rejectedAt': FieldValue.serverTimestamp(),
-          'rejectionReason': notes,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        await ref.read(authProvider.notifier).rejectRoleChange(
+              userId: userId,
+              adminId: adminId,
+              reason: notes,
+            );
       }
 
-      // Update role request status
-      await _firestore.collection('role_requests').doc(requestId).update({
-        'status': isApproved ? 'approved' : 'rejected',
-        'reviewedAt': FieldValue.serverTimestamp(),
-        'reviewedBy': adminId,
-        'notes': isApproved ? notes : null,
-        'rejectionReason': !isApproved ? notes : null,
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return;
+      messenger.showSnackBar(
         SnackBar(
           content: Text(
             isApproved ? 'Role request approved' : 'Role request rejected',
@@ -665,30 +646,12 @@ class _AdminRoleRequestsScreenState
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return;
+      messenger.showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _viewHistory(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const RoleRequestHistoryScreen()),
-    );
-  }
-}
-
-class RoleRequestHistoryScreen extends StatelessWidget {
-  const RoleRequestHistoryScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Role Request History')),
-      body: const Center(child: Text('History functionality coming soon!')),
-    );
   }
 }

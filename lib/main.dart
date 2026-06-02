@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-import 'core/services/firebase_service.dart';
-import 'core/navigation/auth_wrapper.dart';
-
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'features/auth/screens/role_request_screen.dart';
@@ -12,7 +9,6 @@ import 'features/auth/screens/pending_approval_screen.dart';
 
 import 'features/dashboard/screens/customer_dashboard.dart';
 import 'features/dashboard/screens/employee_dashboard.dart';
-import 'features/dashboard/screens/nil_athlete_dashboard.dart';
 import './features/dashboard/screens/admin_dashboard.dart';
 
 import 'features/dashboard/screens/admin/admin_user_management.dart';
@@ -28,12 +24,9 @@ import 'features/dashboard/screens/customer/referral_details_screen.dart';
 
 import 'features/dashboard/screens/employee/employee_submit_task_screen.dart';
 import 'features/dashboard/screens/employee/employee_tasks_list_screen.dart';
-import 'features/dashboard/screens/employee/employee_cashout_screen.dart';
 
 import 'features/settings/screens/settings_screen.dart';
-
-import 'core/providers/auth_provider.dart';
-import 'core/services/employee_service.dart';
+import 'features/splash/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -120,7 +113,7 @@ class MyApp extends StatelessWidget {
       ),
       initialRoute: '/',
       routes: {
-        '/': (context) => const AuthWrapper(),
+        '/': (context) => const SplashGate(),
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const RegisterScreen(),
         '/role-request': (context) => const RoleRequestScreen(),
@@ -134,11 +127,6 @@ class MyApp extends StatelessWidget {
         '/employee/dashboard': (context) => const EmployeeDashboardScreen(),
         '/employee/submit-task': (context) => const SubmitTaskScreen(),
         '/employee/tasks': (context) => const EmployeeTasksListScreen(),
-        '/employee/cashout': (context) => const EmployeeCashoutScreen(),
-
-        '/nil-athlete/dashboard': (context) =>
-            const NilAthleteDashboardScreen(),
-
         '/admin/dashboard': (context) => const AdminDashboardScreen(),
         '/admin/users': (context) => const AdminUserManagementScreen(),
         '/admin/referrals': (context) => const AdminReferralApprovalScreen(),

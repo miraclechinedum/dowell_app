@@ -1,0 +1,108 @@
+rules_version = '2';
+
+// Firestore security rules for Dowell Pest Control.
+//
+// Model: each Firestore document is owned by a user identified by a `customerId`
+// (referrals), `employeeId` (employee_tasks / employee_cashouts), or `userId`
+// (bugbucks_transactions / cash_bonus_transactions / role_requests /
+// notifications). The `users/{uid}` profile is keyed by document id.
+//
+// Pattern: owner can read/create/update/delete their own docs. Admins can do
+// anything. Reads/writes that don't match any allow rule are denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── helpers ─────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userRole() == 'admin';
+    }
+
+    // ─── users/{uid} ────────────────────────────────────────────────────
+    // The profile doc — owner reads/writes themselves, admins manage anyone.
+    match /users/{uid} {
+      allow read, update, delete: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) || isAdmin();
+    }
+
+    // ─── referrals/{id} ─────────────────────────────────────────────────
+    // Customers can create + read + delete their own referrals.
+    // Admins can read/update/delete any referral.
+    match /referrals/{id} {
+      allow read, delete: if isOwner(resource.data.customerId) || isAdmin();
+      allow create: if isOwner(request.resource.data.customerId);
+      allow update: if isAdmin();
+    }
+
+    // ─── employee_tasks/{id} ────────────────────────────────────────────
+    // Employees create their own tasks; only admins can approve/reject.
+    match /employee_tasks/{id} {
+      allow read, delete: if isOwner(resource.data.employeeId) || isAdmin();
+      allow create: if isOwner(request.resource.data.employeeId);
+      allow update: if isAdmin();
+    }
+
+    // ─── employee_cashouts/{id} ─────────────────────────────────────────
+    // Legacy collection — owner can delete (for account deletion), admins manage.
+    match /employee_cashouts/{id} {
+      allow read, delete: if isOwner(resource.data.employeeId) || isAdmin();
+      allow create, update: if isAdmin();
+    }
+
+    // ─── bugbucks_transactions/{id} ─────────────────────────────────────
+    // Auto-written by the app's referral submission flow (which is signed in
+    // as the owner), so owners can create their own. Admins can manage any.
+    match /bugbucks_transactions/{id} {
+      allow read, delete: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isOwner(request.resource.data.userId) || isAdmin();
+      allow update: if isAdmin();
+    }
+
+    // ─── cash_bonus_transactions/{id} ───────────────────────────────────
+    // Written by admins when approving employee tasks. Owners can read/delete.
+    match /cash_bonus_transactions/{id} {
+      allow read, delete: if isOwner(resource.data.userId) || isAdmin();
+      allow create, update: if isAdmin();
+    }
+
+    // ─── role_requests/{id} ─────────────────────────────────────────────
+    // User creates a request for themselves; admin approves/rejects.
+    match /role_requests/{id} {
+      allow read, delete: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isAdmin();
+    }
+
+    // ─── notifications/{id} ─────────────────────────────────────────────
+    // Server / admin actions fan out notifications. Users read + dismiss their own.
+    match /notifications/{id} {
+      allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAdmin();
+    }
+
+    // ─── app_settings/{id} ──────────────────────────────────────────────
+    // Reward amounts and other globals — readable by any signed-in user (the
+    // client reads defaults on launch), writable only by admins.
+    match /app_settings/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ─── audit_logs/{id} ────────────────────────────────────────────────
+    // Admin-only.
+    match /audit_logs/{id} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

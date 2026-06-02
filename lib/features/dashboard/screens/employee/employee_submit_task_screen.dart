@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/form_text_field.dart';
 import '../../../../core/providers/auth_provider.dart';
 import '../../../../core/services/employee_service.dart';
 
@@ -163,23 +164,6 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
     }
   }
 
-  void _clearForm() {
-    _taskTitleController.clear();
-    _taskDescriptionController.clear();
-    _customerNameController.clear();
-    _customerEmailController.clear();
-    _customerPhoneController.clear();
-    _customerAddressController.clear();
-    _amountController.text = '0.00';
-    _notesController.clear();
-    setState(() {
-      _selectedImages.clear();
-      _selectedType = 'customer_followup';
-      _selectedCategory = 'sales';
-      _selectedPriority = 'medium';
-    });
-  }
-
   String _getTaskTypeLabel(String type) {
     switch (type) {
       case 'customer_followup':
@@ -202,11 +186,11 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
   String _getPriorityLabel(String priority) {
     switch (priority) {
       case 'high':
-        return 'High Priority';
+        return 'High';
       case 'medium':
-        return 'Medium Priority';
+        return 'Medium';
       case 'low':
-        return 'Low Priority';
+        return 'Low';
       default:
         return priority;
     }
@@ -225,73 +209,45 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
     super.dispose();
   }
 
-  // Custom input decoration for all text fields
-  InputDecoration _inputDecoration(String labelText, {String? hintText}) {
+  /// Dropdown decoration that matches `FormTextField`'s visual style —
+  /// rounded 12 px outlined border, primary-green focus, no floating label
+  /// (label is rendered as a separate Text widget above via [_dropdownLabel]).
+  InputDecoration _dropdownDecoration() {
     return InputDecoration(
-      labelText: labelText,
-      labelStyle: const TextStyle(
-        color: Color(0xFF555555),
-        fontWeight: FontWeight.w500,
-      ),
-      hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFFAAAAAA), fontSize: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.buttonBorder),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.buttonBorder),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(
-          color: Color(0xFF2E7D32), // Primary green color
-          width: 2.0,
+          color: AppColors.primary,
+          width: 1.6,
         ),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.red, width: 1.5),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.red, width: 2.0),
       ),
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      floatingLabelBehavior: FloatingLabelBehavior.always,
     );
   }
 
-  // Custom dropdown decoration
-  InputDecoration _dropdownDecoration(String labelText) {
-    return InputDecoration(
-      labelText: labelText,
-      labelStyle: const TextStyle(
-        color: Color(0xFF555555),
-        fontWeight: FontWeight.w500,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFCCCCCC), width: 1.5),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(
-          color: Color(0xFF2E7D32), // Primary green color
-          width: 2.0,
+  /// Renders the same label style that FormTextField uses internally so
+  /// dropdowns sit visually flush with the text inputs.
+  Widget _dropdownLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textDark,
         ),
       ),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      floatingLabelBehavior: FloatingLabelBehavior.always,
     );
   }
 
@@ -329,46 +285,51 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
 
                 AppCard(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Task Type Dropdown
-                      DropdownButtonFormField<String>(
-                        value: _selectedType,
-                        decoration: _dropdownDecoration('Task Type *'),
-                        items: _taskTypes.map((type) {
-                          return DropdownMenuItem(
-                            value: type,
-                            child: Text(
-                              _getTaskTypeLabel(type),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF333333),
-                              ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _dropdownLabel('Task Type *'),
+                            DropdownButtonFormField<String>(
+                              value: _selectedType,
+                              isExpanded: true,
+                              decoration: _dropdownDecoration(),
+                              items: _taskTypes.map((type) {
+                                return DropdownMenuItem(
+                                  value: type,
+                                  child: Text(
+                                    _getTaskTypeLabel(type),
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.textDark,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: _isSubmitting
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _selectedType = value!;
+                                      });
+                                    },
                             ),
-                          );
-                        }).toList(),
-                        onChanged: _isSubmitting
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  _selectedType = value!;
-                                });
-                              },
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
+                          ],
                         ),
                       ),
 
-                      const SizedBox(height: 16),
-
                       // Task Title
-                      TextFormField(
+                      FormTextField(
+                        label: 'Task Title *',
+                        hintText:
+                            'e.g., Customer Follow-up - Johnson Residence',
                         controller: _taskTitleController,
-                        decoration: _inputDecoration(
-                          'Task Title *',
-                          hintText:
-                              'e.g., Customer Follow-up - Johnson Residence',
-                        ),
+                        enabled: !_isSubmitting,
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Please enter a task title';
@@ -378,22 +339,14 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
                           }
                           return null;
                         },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
                       ),
 
-                      const SizedBox(height: 16),
-
                       // Task Description
-                      TextFormField(
+                      FormTextField(
+                        label: 'Task Description *',
+                        hintText: 'Describe what you did…',
                         controller: _taskDescriptionController,
-                        decoration: _inputDecoration(
-                          'Task Description *',
-                          hintText: 'Describe what you did...',
-                        ),
+                        enabled: !_isSubmitting,
                         maxLines: 4,
                         validator: (value) {
                           if (value == null || value.isEmpty) {
@@ -404,92 +357,93 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
                           }
                           return null;
                         },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
                       ),
-
-                      const SizedBox(height: 16),
 
                       // Category and Priority in Row
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedCategory,
-                              decoration: _dropdownDecoration('Category'),
-                              items: _categories.map((category) {
-                                return DropdownMenuItem(
-                                  value: category,
-                                  child: Text(
-                                    category.toUpperCase(),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xFF333333),
-                                    ),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 18),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _dropdownLabel('Category'),
+                                  DropdownButtonFormField<String>(
+                                    value: _selectedCategory,
+                                    isExpanded: true,
+                                    decoration: _dropdownDecoration(),
+                                    items: _categories.map((category) {
+                                      return DropdownMenuItem(
+                                        value: category,
+                                        child: Text(
+                                          category[0].toUpperCase() +
+                                              category.substring(1),
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            color: AppColors.textDark,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: _isSubmitting
+                                        ? null
+                                        : (value) {
+                                            setState(() {
+                                              _selectedCategory = value!;
+                                            });
+                                          },
                                   ),
-                                );
-                              }).toList(),
-                              onChanged: _isSubmitting
-                                  ? null
-                                  : (value) {
-                                      setState(() {
-                                        _selectedCategory = value!;
-                                      });
-                                    },
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF333333),
+                                ],
                               ),
                             ),
-                          ),
-
-                          const SizedBox(width: 16),
-
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedPriority,
-                              decoration: _dropdownDecoration('Priority'),
-                              items: _priorities.map((priority) {
-                                return DropdownMenuItem(
-                                  value: priority,
-                                  child: Text(
-                                    _getPriorityLabel(priority),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Color(0xFF333333),
-                                    ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _dropdownLabel('Priority'),
+                                  DropdownButtonFormField<String>(
+                                    value: _selectedPriority,
+                                    isExpanded: true,
+                                    decoration: _dropdownDecoration(),
+                                    items: _priorities.map((priority) {
+                                      return DropdownMenuItem(
+                                        value: priority,
+                                        child: Text(
+                                          _getPriorityLabel(priority),
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            color: AppColors.textDark,
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: _isSubmitting
+                                        ? null
+                                        : (value) {
+                                            setState(() {
+                                              _selectedPriority = value!;
+                                            });
+                                          },
                                   ),
-                                );
-                              }).toList(),
-                              onChanged: _isSubmitting
-                                  ? null
-                                  : (value) {
-                                      setState(() {
-                                        _selectedPriority = value!;
-                                      });
-                                    },
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: Color(0xFF333333),
+                                ],
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
 
-                      const SizedBox(height: 16),
-
                       // Amount
-                      TextFormField(
+                      FormTextField(
+                        label: 'Estimated Bonus Amount',
+                        hintText: '0.00',
                         controller: _amountController,
-                        decoration: _inputDecoration(
-                          'Estimated Bonus Amount',
-                          hintText: '0.00',
-                        ),
-                        keyboardType: TextInputType.numberWithOptions(
+                        enabled: !_isSubmitting,
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         validator: (value) {
@@ -501,28 +455,15 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
                           }
                           return null;
                         },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
                       ),
 
-                      const SizedBox(height: 16),
-
                       // Notes
-                      TextFormField(
+                      FormTextField(
+                        label: 'Additional Notes (Optional)',
+                        hintText: 'Add any additional notes here…',
                         controller: _notesController,
-                        decoration: _inputDecoration(
-                          'Additional Notes (Optional)',
-                          hintText: 'Add any additional notes here...',
-                        ),
-                        maxLines: 3,
                         enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
+                        maxLines: 3,
                       ),
                     ],
                   ),
@@ -544,27 +485,25 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
                 AppCard(
                   child: Column(
                     children: [
-                      TextFormField(
+                      FormTextField(
+                        label: 'Customer Name *',
+                        hintText: 'Full name',
                         controller: _customerNameController,
-                        decoration: _inputDecoration('Customer Name *'),
+                        enabled: !_isSubmitting,
+                        prefixIcon: const Icon(Icons.person),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Please enter customer name';
                           }
                           return null;
                         },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
                       ),
-
-                      const SizedBox(height: 16),
-
-                      TextFormField(
+                      FormTextField(
+                        label: 'Customer Email *',
+                        hintText: 'customer@example.com',
                         controller: _customerEmailController,
-                        decoration: _inputDecoration('Customer Email *'),
+                        enabled: !_isSubmitting,
+                        prefixIcon: const Icon(Icons.email),
                         keyboardType: TextInputType.emailAddress,
                         validator: (value) {
                           if (value == null || value.isEmpty) {
@@ -575,18 +514,13 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
                           }
                           return null;
                         },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
                       ),
-
-                      const SizedBox(height: 16),
-
-                      TextFormField(
+                      FormTextField(
+                        label: 'Customer Phone *',
+                        hintText: '(123) 456-7890',
                         controller: _customerPhoneController,
-                        decoration: _inputDecoration('Customer Phone *'),
+                        enabled: !_isSubmitting,
+                        prefixIcon: const Icon(Icons.phone),
                         keyboardType: TextInputType.phone,
                         validator: (value) {
                           if (value == null || value.isEmpty) {
@@ -594,26 +528,14 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
                           }
                           return null;
                         },
-                        enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
                       ),
-
-                      const SizedBox(height: 16),
-
-                      TextFormField(
+                      FormTextField(
+                        label: 'Customer Address (Optional)',
+                        hintText: 'Street, city, state, ZIP',
                         controller: _customerAddressController,
-                        decoration: _inputDecoration(
-                          'Customer Address (Optional)',
-                        ),
-                        maxLines: 2,
                         enabled: !_isSubmitting,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF333333),
-                        ),
+                        prefixIcon: const Icon(Icons.location_on),
+                        maxLines: 2,
                       ),
                     ],
                   ),

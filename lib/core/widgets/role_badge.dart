@@ -20,10 +20,6 @@ class RoleBadge extends StatelessWidget {
         badgeColor = const Color(0xFF2196F3);
         displayText = 'Employee';
         break;
-      case 'nil_athlete':
-        badgeColor = const Color(0xFFFF9800);
-        displayText = 'NIL Athlete';
-        break;
       case 'customer':
         badgeColor = const Color(0xFF4CAF50);
         displayText = 'Customer';

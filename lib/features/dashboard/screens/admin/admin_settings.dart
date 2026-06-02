@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/services.dart';
+
+import '../../../../core/constants/app_colors.dart';
+import '../../../../core/widgets/app_card.dart';
 
 class AdminSettingsScreen extends ConsumerStatefulWidget {
   const AdminSettingsScreen({super.key});
@@ -64,7 +67,6 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
       'converted_referral_bonus': 50,
       'employee_task_bug_bucks': 50,
       'employee_cash_bonus': 25.0,
-      'nil_athlete_bonus': 75,
       'updated_at': FieldValue.serverTimestamp(),
       'updated_by': 'system',
     };
@@ -82,9 +84,6 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     );
     _controllers['employee_cash_bonus'] = TextEditingController(
       text: _settings['employee_cash_bonus']?.toString() ?? '25.0',
-    );
-    _controllers['nil_athlete_bonus'] = TextEditingController(
-      text: _settings['nil_athlete_bonus']?.toString() ?? '75',
     );
   }
 
@@ -107,9 +106,6 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
       final employeeCashBonus = double.tryParse(
         _controllers['employee_cash_bonus']!.text,
       );
-      final nilAthleteBonus = int.tryParse(
-        _controllers['nil_athlete_bonus']!.text,
-      );
 
       if (referralBugBucks == null || referralBugBucks < 0) {
         throw 'Referral Bug Bucks must be a positive number';
@@ -123,9 +119,6 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
       if (employeeCashBonus == null || employeeCashBonus < 0) {
         throw 'Employee Cash Bonus must be a positive number';
       }
-      if (nilAthleteBonus == null || nilAthleteBonus < 0) {
-        throw 'NIL Athlete Bonus must be a positive number';
-      }
 
       // Update settings
       final updatedSettings = {
@@ -133,7 +126,6 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
         'converted_referral_bonus': convertedBonus,
         'employee_task_bug_bucks': employeeTaskBugBucks,
         'employee_cash_bonus': employeeCashBonus,
-        'nil_athlete_bonus': nilAthleteBonus,
         'updated_at': FieldValue.serverTimestamp(),
         'updated_by': 'admin',
       };
@@ -182,6 +174,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
+        backgroundColor: AppColors.background,
         appBar: AppBar(
           title: const Text('Reward Settings'),
           backgroundColor: Colors.white,
@@ -192,6 +185,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     }
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Reward Settings'),
         backgroundColor: Colors.white,
@@ -209,15 +203,20 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                   const Text(
                     'Configure Reward Amounts',
                     style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2C3E50),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark,
+                      letterSpacing: -0.2,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   const Text(
-                    'Set the Bug Bucks and cash bonus amounts for different user actions',
-                    style: TextStyle(fontSize: 14, color: Color(0xFF7F8C8D)),
+                    'Set the Bug Bucks and cash bonus amounts for different user actions.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textNeutral,
+                      height: 1.4,
+                    ),
                   ),
                   const SizedBox(height: 24),
 
@@ -230,7 +229,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                     icon: Icons.person_add,
                     iconColor: Colors.orange,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
                   // Converted Referral Bonus
                   _buildRewardSetting(
@@ -240,9 +239,9 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                     controller: _controllers['converted_referral_bonus']!,
                     suffix: 'BB',
                     icon: Icons.check_circle,
-                    iconColor: Colors.green,
+                    iconColor: AppColors.success,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
                   // Employee Task Bug Bucks
                   _buildRewardSetting(
@@ -253,7 +252,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                     icon: Icons.task,
                     iconColor: Colors.blue,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
                   // Employee Cash Bonus
                   _buildRewardSetting(
@@ -262,22 +261,10 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                     controller: _controllers['employee_cash_bonus']!,
                     suffix: '\$',
                     icon: Icons.attach_money,
-                    iconColor: Colors.green,
+                    iconColor: AppColors.primary,
                     isDecimal: true,
                   ),
-                  const SizedBox(height: 20),
-
-                  // NIL Athlete Bonus
-                  _buildRewardSetting(
-                    title: 'NIL Athlete Bonus',
-                    subtitle: 'Special bonus for NIL athlete referrals',
-                    controller: _controllers['nil_athlete_bonus']!,
-                    suffix: 'BB',
-                    icon: Icons.sports,
-                    iconColor: Colors.purple,
-                  ),
-
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -346,6 +333,8 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     );
   }
 
+  /// Reward-setting card — uses [AppCard] + FormTextField-style input so it
+  /// reads visually identical to the other admin screens.
   Widget _buildRewardSetting({
     required String title,
     required String subtitle,
@@ -355,38 +344,22 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
     required Color iconColor,
     bool isDecimal = false,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withOpacity(0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return AppCard(
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: iconColor.withOpacity(0.3),
-                    width: 1,
-                  ),
+                  color: iconColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: iconColor, size: 20),
+                child: Icon(icon, color: iconColor, size: 22),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -395,16 +368,17 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                       title,
                       style: const TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2C3E50),
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF7F8C8D),
+                        fontSize: 13,
+                        color: AppColors.textNeutral,
+                        height: 1.35,
                       ),
                     ),
                   ],
@@ -412,7 +386,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -430,58 +404,54 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
                       : [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
                     hintText: 'Enter amount',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                        color: Colors.black,
-                        width: 1,
-                      ),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                        color: Colors.black,
-                        width: 1,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF2E7D32),
-                        width: 2,
-                      ),
+                    hintStyle: const TextStyle(
+                      color: AppColors.textNeutral,
+                      fontSize: 15,
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 14,
+                      vertical: 16,
                     ),
-                    fillColor: Colors.grey.shade50,
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: AppColors.buttonBorder,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: AppColors.primary,
+                        width: 1.6,
+                      ),
+                    ),
                     filled: true,
+                    fillColor: Colors.white,
                   ),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: Text(
-                  suffix,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  suffix,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: iconColor,
+                    letterSpacing: 0.3,
                   ),
                 ),
               ),

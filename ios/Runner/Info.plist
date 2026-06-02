@@ -24,8 +24,14 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Dowell needs camera access so employees can capture evidence photos when submitting completed pest-control tasks.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Dowell needs photo library access so employees can attach evidence photos when submitting completed pest-control tasks.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

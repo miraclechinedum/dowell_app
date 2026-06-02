@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../../core/providers/auth_provider.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/role_badge.dart';
-import '../../../../core/widgets/status_badge.dart';
 import './admin/admin_user_management.dart';
 import './admin/admin_referral_approval.dart';
 import './admin/admin_task_approval.dart';
@@ -58,6 +56,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           .where('status', isEqualTo: 'pending')
           .get();
 
+      // _loadStats() is fired from initState() and awaits ~4 Firestore round
+      // trips — if the user (or a hot restart) tears the screen down before
+      // those resolve we must NOT call setState on the dead State.
+      if (!mounted) return;
       setState(() {
         _stats = {
           'totalUsers': usersSnapshot.count ?? 0,
@@ -69,6 +71,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       });
     } catch (e) {
       print('Error loading stats: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -120,10 +123,6 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications, color: Color(0xFF2C3E50)),
-            onPressed: () => _navigateToNotifications(context),
-          ),
-          IconButton(
             icon: const Icon(Icons.logout, color: Color(0xFF2C3E50)),
             onPressed: () => _logoutUser(context, ref),
           ),
@@ -143,14 +142,15 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                 children: [
                   // Welcome Header
                   AppCard(
+                    padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
                             Container(
-                              width: 60,
-                              height: 60,
+                              width: 64,
+                              height: 64,
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
                                   colors: [
@@ -160,34 +160,38 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
-                                borderRadius: BorderRadius.circular(30),
+                                borderRadius: BorderRadius.circular(32),
                               ),
                               child: const Icon(
                                 Icons.admin_panel_settings,
                                 color: Colors.white,
-                                size: 32,
+                                size: 34,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     'Welcome, $userName!',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
                                       color: Color(0xFF2C3E50),
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 4),
                                   Text(
                                     userEmail.isNotEmpty
                                         ? userEmail
                                         : 'admin@example.com',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 13,
                                       color: Color(0xFF7F8C8D),
                                     ),
                                   ),
@@ -196,8 +200,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
+                                horizontal: 10,
+                                vertical: 6,
                               ),
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
@@ -213,34 +217,43 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 10,
+                                  fontSize: 12,
+                                  letterSpacing: 0.6,
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
                         const Text(
-                          'Manage users, approve activities, and monitor system performance',
+                          'Manage users, approve activities, and monitor system performance.',
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 14,
                             color: Color(0xFF7F8C8D),
+                            height: 1.4,
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
+
+                  /// Hero "Pending Approvals" card — purple-gradient with the
+                  /// same scattered-circle pattern family as the customer Bug
+                  /// Bucks and employee Cash Bonus hero cards.
+                  _buildPendingApprovalsHero(),
+
+                  const SizedBox(height: 18),
 
                   // Quick Stats
                   GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 0.9,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 14,
+                    childAspectRatio: 1.05,
                     children: [
                       _buildStatCard(
                         title: 'Total Users',
@@ -297,26 +310,26 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 28),
 
                   // Quick Actions
                   const Text(
                     'Quick Actions',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
                       color: Color(0xFF2C3E50),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
 
                   GridView.count(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                    childAspectRatio: 0.8,
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 14,
+                    mainAxisSpacing: 14,
+                    childAspectRatio: 1.7,
                     children: [
                       _buildActionButton(
                         icon: Icons.people,
@@ -391,18 +404,18 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 28),
 
                   // Recent Activity
                   const Text(
                     'Recent Activity',
                     style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
                       color: Color(0xFF2C3E50),
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
 
                   FutureBuilder(
                     future: _getRecentActivity(),
@@ -415,28 +428,31 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
                       if (activities.isEmpty) {
                         return AppCard(
+                          padding: const EdgeInsets.all(24),
                           child: Column(
                             children: [
                               const Icon(
                                 Icons.history,
-                                size: 48,
+                                size: 56,
                                 color: Colors.grey,
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 14),
                               const Text(
                                 'No recent activity',
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF7F8C8D),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF2C3E50),
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
                               Text(
-                                'Activity will appear here as users interact with the app',
+                                'Activity will appear here as users interact with the app.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 14,
                                   color: Colors.grey[600],
+                                  height: 1.4,
                                 ),
                               ),
                             ],
@@ -690,6 +706,217 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     );
   }
 
+  /// Hero card that surfaces the admin's total actionable queue: the sum of
+  /// pending referrals, pending tasks, and pending role requests. Purple
+  /// gradient + scattered-circle pattern matches admin's color identity and
+  /// stays consistent with the customer/employee green heroes.
+  Widget _buildPendingApprovalsHero() {
+    final pendingReferrals = _stats['pendingReferrals'] ?? 0;
+    final pendingTasks = _stats['pendingTasks'] ?? 0;
+    final pendingRoles = _stats['pendingRoleRequests'] ?? 0;
+    final total = pendingReferrals + pendingTasks + pendingRoles;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF9C27B0), Color(0xFF673AB7)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF673AB7).withOpacity(0.32),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Stack(
+          children: [
+            const Positioned.fill(
+              child: CustomPaint(painter: _PendingPatternPainter()),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.pending_actions,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Pending Approvals',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withOpacity(0.92),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        total.toString(),
+                        style: const TextStyle(
+                          fontSize: 52,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          height: 1.0,
+                          letterSpacing: -1,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            total == 1 ? 'ITEM' : 'ITEMS',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Inline breakdown chips — each tappable to jump to its queue.
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _pendingChip(
+                        label: 'Referrals',
+                        value: pendingReferrals,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const AdminReferralApprovalScreen(),
+                          ),
+                        ),
+                      ),
+                      _pendingChip(
+                        label: 'Tasks',
+                        value: pendingTasks,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminTaskApprovalScreen(),
+                          ),
+                        ),
+                      ),
+                      _pendingChip(
+                        label: 'Roles',
+                        value: pendingRoles,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminRoleRequestsScreen(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    total == 0
+                        ? 'You\'re all caught up — nothing waiting for review.'
+                        : 'Items waiting for your review.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withOpacity(0.85),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pendingChip({
+    required String label,
+    required int value,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.18),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.25)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                value.toString(),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withOpacity(0.92),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.arrow_forward,
+                size: 12,
+                color: Colors.white.withOpacity(0.7),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatCard({
     required String title,
     required String value,
@@ -699,50 +926,65 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
             ),
           ],
           border: Border.all(color: Colors.grey[200]!, width: 1),
         ),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: color, size: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: Colors.grey[400],
+                  size: 22,
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.grey,
-                fontWeight: FontWeight.w500,
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                    height: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF2C3E50),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -758,33 +1000,41 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.grey[200]!, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withOpacity(0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 20),
+              child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF2C3E50),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF2C3E50),
+                ),
               ),
             ),
           ],
@@ -801,19 +1051,21 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     required Color color,
   }) {
     return AppCard(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(icon, color: color, size: 24),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -821,25 +1073,33 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF2C3E50),
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     color: Color(0xFF7F8C8D),
+                    height: 1.3,
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Text(
             time,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF7F8C8D)),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF7F8C8D),
+            ),
           ),
         ],
       ),
@@ -943,13 +1203,35 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       ).pushNamedAndRemoveUntil('/login', (route) => false);
     }
   }
+}
 
-  void _navigateToNotifications(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Notifications screen coming soon!'),
-        backgroundColor: Color(0xFF2E7D32),
-      ),
-    );
+/// Decorative scattered-circle pattern for the admin "Pending Approvals"
+/// hero card. Same visual family as the customer Bug Bucks and employee
+/// Cash Bonus pattern painters, deterministic positions for stable layout.
+class _PendingPatternPainter extends CustomPainter {
+  const _PendingPatternPainter();
+
+  // Each entry: [fx, fy, radiusFactor (of width), alpha].
+  static const List<List<double>> _circles = [
+    [0.92, 0.10, 0.30, 0.07],
+    [0.08, 0.85, 0.22, 0.06],
+    [0.78, 0.78, 0.14, 0.08],
+    [0.42, 0.18, 0.06, 0.09],
+    [0.20, 0.50, 0.04, 0.10],
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final c in _circles) {
+      final paint = Paint()..color = Colors.white.withOpacity(c[3]);
+      canvas.drawCircle(
+        Offset(size.width * c[0], size.height * c[1]),
+        size.width * c[2],
+        paint,
+      );
+    }
   }
+
+  @override
+  bool shouldRepaint(covariant _PendingPatternPainter oldDelegate) => false;
 }

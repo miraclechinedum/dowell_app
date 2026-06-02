@@ -24,25 +24,9 @@ class _RoleRequestScreenState extends ConsumerState<RoleRequestScreen> {
     {
       'id': 'employee',
       'title': 'Employee',
-      'description': 'Submit tasks and earn cash bonuses',
+      'description': 'Submit completed pest-control tasks for approval',
       'icon': Icons.work,
       'color': Colors.blue,
-      'requiresVerification': true,
-    },
-    {
-      'id': 'nil_athlete',
-      'title': 'NIL Athlete',
-      'description': 'Manage sponsorships and referrals',
-      'icon': Icons.sports,
-      'color': Colors.green,
-      'requiresVerification': true,
-    },
-    {
-      'id': 'admin',
-      'title': 'Administrator',
-      'description': 'Manage users and system settings',
-      'icon': Icons.admin_panel_settings,
-      'color': Colors.purple,
       'requiresVerification': true,
     },
   ];
@@ -75,13 +59,9 @@ class _RoleRequestScreenState extends ConsumerState<RoleRequestScreen> {
           );
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text(
-            '${_selectedRole == 'employee'
-                ? 'Employee'
-                : _selectedRole == 'nil_athlete'
-                ? 'NIL Athlete'
-                : 'Administrator'} access requested. An admin will review your request.',
+            'Employee access requested. An admin will review your request.',
           ),
           backgroundColor: AppColors.success,
         ),

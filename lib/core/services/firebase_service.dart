@@ -64,8 +64,6 @@ class FirebaseService {
         await settingsRef.set({
           'bugBucksPerReferral': 100,
           'employeeBonusAmount': 50.00,
-          'nilAthleteCommissionRate': 0.15,
-          'minimumWithdrawalAmount': 25.00,
           'updatedAt': FieldValue.serverTimestamp(),
         });
       }

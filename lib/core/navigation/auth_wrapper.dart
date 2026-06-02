@@ -7,7 +7,6 @@ import '../../features/auth/screens/login_screen.dart';
 
 import '../../features/dashboard/screens/customer_dashboard.dart';
 import '../../features/dashboard/screens/employee_dashboard.dart';
-import '../../features/dashboard/screens/nil_athlete_dashboard.dart';
 import '../../features/dashboard/screens/admin_dashboard.dart';
 
 import '../../features/auth/screens/pending_approval_screen.dart';
@@ -39,9 +38,6 @@ class AuthWrapper extends ConsumerWidget {
         break;
       case 'employee':
         dashboard = const EmployeeDashboardScreen();
-        break;
-      case 'nil_athlete':
-        dashboard = const NilAthleteDashboardScreen();
         break;
       case 'customer':
       default:

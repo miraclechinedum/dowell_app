@@ -5,10 +5,25 @@ import 'package:intl/intl.dart';
 import '../../../../core/providers/auth_provider.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/role_badge.dart';
-import '../../../../core/widgets/status_badge.dart';
 
-class AdminUserManagementScreen extends ConsumerWidget {
+class AdminUserManagementScreen extends ConsumerStatefulWidget {
   const AdminUserManagementScreen({super.key});
+
+  @override
+  ConsumerState<AdminUserManagementScreen> createState() =>
+      _AdminUserManagementScreenState();
+}
+
+class _AdminUserManagementScreenState
+    extends ConsumerState<AdminUserManagementScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   // SAFE EMAIL PARSING FUNCTION
   String _getDisplayNameFromEmail(String? email) {
@@ -37,7 +52,7 @@ class AdminUserManagementScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final usersStream = FirebaseFirestore.instance
         .collection('users')
         .orderBy('createdAt', descending: true)
@@ -45,22 +60,72 @@ class AdminUserManagementScreen extends ConsumerWidget {
     final authUser = ref.watch(authProvider).user;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFFDFAF6),
       appBar: AppBar(
         title: const Text('User Management'),
         backgroundColor: Colors.white,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Color(0xFF2C3E50)),
-            onPressed: () {
-              // Force refresh the stream
-            },
-          ),
-        ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: usersStream,
-        builder: (context, snapshot) {
+      body: Column(
+        children: [
+          // Search bar
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              onChanged: (value) =>
+                  setState(() => _searchQuery = value.trim().toLowerCase()),
+              decoration: InputDecoration(
+                hintText: 'Search by name or email…',
+                hintStyle: const TextStyle(
+                  color: Color(0xFF7F8C8D),
+                  fontSize: 14,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: Color(0xFF7F8C8D),
+                ),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(
+                          Icons.close,
+                          color: Color(0xFF7F8C8D),
+                          size: 20,
+                        ),
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                filled: true,
+                fillColor: const Color(0xFFFDFAF6),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF2E7D32),
+                    width: 1.6,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: usersStream,
+              builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -94,9 +159,23 @@ class AdminUserManagementScreen extends ConsumerWidget {
             );
           }
 
-          final users = snapshot.data?.docs ?? [];
+          final allUsers = snapshot.data?.docs ?? [];
 
-          if (users.isEmpty) {
+          // Apply the search filter — matches name, email, or role
+          // (case-insensitive). Empty query passes everything through.
+          final users = _searchQuery.isEmpty
+              ? allUsers
+              : allUsers.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final email = data['email']?.toString().toLowerCase() ?? '';
+                  final name = _getDisplayName(data, email).toLowerCase();
+                  final role = data['role']?.toString().toLowerCase() ?? '';
+                  return name.contains(_searchQuery) ||
+                      email.contains(_searchQuery) ||
+                      role.contains(_searchQuery);
+                }).toList();
+
+          if (allUsers.isEmpty) {
             return const Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -117,11 +196,77 @@ class AdminUserManagementScreen extends ConsumerWidget {
             );
           }
 
+          if (users.isEmpty) {
+            // Filter active but no matches — distinct from "no users at all".
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.search_off,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'No users match "${_searchController.text}"',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2C3E50),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Try a different name, email, or role.',
+                      style: TextStyle(color: Colors.grey),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton.icon(
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Clear search'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF2E7D32),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: users.length,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            itemCount: users.length + 1,
             itemBuilder: (context, index) {
-              final user = users[index];
+              // Result count strip — only shown above the list.
+              if (index == 0) {
+                final showing = users.length;
+                final total = allUsers.length;
+                return Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 12),
+                  child: Text(
+                    _searchQuery.isEmpty
+                        ? '$total ${total == 1 ? 'user' : 'users'}'
+                        : 'Showing $showing of $total',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF7F8C8D),
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                );
+              }
+              final user = users[index - 1];
               final data = user.data() as Map<String, dynamic>;
               final userId = user.id;
               final email = data['email']?.toString() ?? 'No email';
@@ -146,160 +291,164 @@ class AdminUserManagementScreen extends ConsumerWidget {
                 return 'U';
               }
 
+              final isActive = status == 'active';
+
+              void openActions() => _showUserActions(
+                    context,
+                    userId,
+                    role,
+                    displayName,
+                    email,
+                    bugBucks,
+                    cashBonus,
+                    phone,
+                    address,
+                    authUser?.uid ?? '',
+                    authUser?.email ?? 'Admin',
+                    status: status,
+                  );
+
               return AppCard(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Column(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
+                onTap: openActions,
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    // Avatar with subtle status dot overlay
+                    Stack(
                       children: [
                         CircleAvatar(
+                          radius: 24,
                           backgroundColor: _getAvatarColor(role),
                           child: Text(
                             getAvatarText(displayName),
-                            style: const TextStyle(color: Colors.white),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 18,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                displayName,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF2C3E50),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                email,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF7F8C8D),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'ID: ${userId.substring(0, 8)}...',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Color(0xFF95A5A6),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        RoleBadge(role: role),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        _buildStatItem(
-                          label: 'Bug Bucks',
-                          value: '$bugBucks',
-                          color: const Color(0xFF2E7D32),
-                        ),
-                        const SizedBox(width: 16),
-                        _buildStatItem(
-                          label: 'Cash Bonus',
-                          value: '\$${cashBonus.toStringAsFixed(2)}',
-                          color: Colors.green,
-                        ),
-                        const SizedBox(width: 16),
-                        _buildStatItem(
-                          label: 'Referrals',
-                          value: '${data['totalReferrals'] ?? 0}',
-                          color: Colors.orange,
-                        ),
-                        const Spacer(),
-                        StatusBadge(status: status),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.calendar_today,
-                          size: 12,
-                          color: const Color(0xFF7F8C8D),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Joined $createdAt',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF7F8C8D),
-                          ),
-                        ),
-                        const Spacer(),
-                        Row(
-                          children: [
-                            if (status == 'active')
-                              OutlinedButton(
-                                onPressed: () => _deactivateUser(
-                                  context,
-                                  userId,
-                                  displayName,
-                                  authUser?.uid ?? '',
-                                  authUser?.email ?? 'Admin',
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  side: const BorderSide(color: Colors.red),
-                                ),
-                                child: const Text(
-                                  'Deactivate',
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                              )
-                            else
-                              OutlinedButton(
-                                onPressed: () => _activateUser(
-                                  context,
-                                  userId,
-                                  displayName,
-                                  authUser?.uid ?? '',
-                                  authUser?.email ?? 'Admin',
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  side: const BorderSide(color: Colors.green),
-                                ),
-                                child: const Text(
-                                  'Activate',
-                                  style: TextStyle(color: Colors.green),
-                                ),
-                              ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.more_vert),
-                              onPressed: () => _showUserActions(
-                                context,
-                                userId,
-                                role,
-                                displayName,
-                                email,
-                                bugBucks,
-                                cashBonus,
-                                phone,
-                                address,
-                                authUser?.uid ?? '',
-                                authUser?.email ?? 'Admin',
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? const Color(0xFF4CAF50)
+                                  : Colors.grey,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 2,
                               ),
                             ),
-                          ],
+                          ),
                         ),
                       ],
+                    ),
+                    const SizedBox(width: 12),
+                    // Identity + inline stats
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF2C3E50),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              RoleBadge(role: role),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            email,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF7F8C8D),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Inline metric strip — bullet-separated for density.
+                          DefaultTextStyle(
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF7F8C8D),
+                            ),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  isActive ? 'Active' : 'Inactive',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isActive
+                                        ? const Color(0xFF4CAF50)
+                                        : Colors.grey,
+                                  ),
+                                ),
+                                const Text('·'),
+                                Text(
+                                  '$bugBucks BB',
+                                  style: const TextStyle(
+                                    color: Color(0xFF2E7D32),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Text('·'),
+                                Text(
+                                  '\$${cashBonus.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF2E7D32),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Text('·'),
+                                Text(
+                                  '${data['totalReferrals'] ?? 0} refs',
+                                  style: const TextStyle(
+                                    color: Colors.orange,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const Text('·'),
+                                Text('Joined $createdAt'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Overflow menu — tap anywhere on card opens the same sheet
+                    // but this is an explicit affordance for the gesture.
+                    IconButton(
+                      icon: const Icon(
+                        Icons.more_vert,
+                        color: Color(0xFF7F8C8D),
+                      ),
+                      tooltip: 'User actions',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: openActions,
                     ),
                   ],
                 ),
@@ -308,34 +457,9 @@ class AdminUserManagementScreen extends ConsumerWidget {
           );
         },
       ),
-    );
-  }
-
-  Widget _buildStatItem({
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 10,
-            color: Color(0xFF7F8C8D),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
-      ],
+            ), // close Expanded
+          ], // close Column children
+        ), // close Column
     );
   }
 
@@ -345,8 +469,6 @@ class AdminUserManagementScreen extends ConsumerWidget {
         return Colors.purple;
       case 'employee':
         return Colors.blue;
-      case 'nil_athlete':
-        return Colors.orange;
       default:
         return const Color(0xFF2E7D32);
     }
@@ -363,8 +485,9 @@ class AdminUserManagementScreen extends ConsumerWidget {
     String phone,
     String address,
     String adminId,
-    String adminEmail,
-  ) {
+    String adminEmail, {
+    String status = 'active',
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -452,6 +575,51 @@ class AdminUserManagementScreen extends ConsumerWidget {
                 },
               ),
               const Divider(),
+              // Activate / Deactivate — destructive-style at the bottom so it
+              // doesn't sit next to the everyday "Edit User" / "Adjust Rewards".
+              if (status == 'active')
+                ListTile(
+                  leading: const Icon(Icons.block, color: Colors.red),
+                  title: const Text(
+                    'Deactivate User',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  subtitle: const Text(
+                    "Blocks sign-in until reactivated",
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _deactivateUser(
+                      context,
+                      userId,
+                      displayName,
+                      adminId,
+                      adminEmail,
+                    );
+                  },
+                )
+              else
+                ListTile(
+                  leading: const Icon(
+                    Icons.check_circle_outline,
+                    color: Colors.green,
+                  ),
+                  title: const Text(
+                    'Activate User',
+                    style: TextStyle(color: Colors.green),
+                  ),
+                  subtitle: const Text('Restores sign-in access'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _activateUser(
+                      context,
+                      userId,
+                      displayName,
+                      adminId,
+                      adminEmail,
+                    );
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.close, color: Colors.grey),
                 title: const Text('Cancel'),
@@ -974,13 +1142,6 @@ class AdminUserManagementScreen extends ConsumerWidget {
                         'Employee',
                         Colors.blue,
                         () => setState(() => selectedRole = 'employee'),
-                      ),
-                      _buildRoleOption(
-                        'nil_athlete',
-                        selectedRole,
-                        'NIL Athlete',
-                        Colors.orange,
-                        () => setState(() => selectedRole = 'nil_athlete'),
                       ),
                       _buildRoleOption(
                         'admin',
