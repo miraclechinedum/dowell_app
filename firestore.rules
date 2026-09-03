@@ -7,8 +7,9 @@ rules_version = '2';
 // (bugbucks_transactions / cash_bonus_transactions / role_requests /
 // notifications). The `users/{uid}` profile is keyed by document id.
 //
-// Pattern: owner can read/create/update/delete their own docs. Admins can do
-// anything. Reads/writes that don't match any allow rule are denied.
+// Pattern: owners receive only the narrow reads/profile operations listed below.
+// Trusted Functions use the Admin SDK; claimed admins retain explicit management
+// access. Reads/writes that don't match an allow rule are denied.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -21,74 +22,188 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function userRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.keys().hasAny(['admin'])
+        && request.auth.token.admin == true;
     }
 
-    function isAdmin() {
-      return isSignedIn() && userRole() == 'admin';
+    function isActiveProfile(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        && get(/databases/$(database)/documents/users/$(uid)).data.status != 'deleted'
+        && (!get(/databases/$(database)/documents/users/$(uid)).data.keys()
+          .hasAny(['isDeleted'])
+          || get(/databases/$(database)/documents/users/$(uid)).data.isDeleted == false);
+    }
+
+    function doesNotChangeDeletionMetadata() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'isDeleted', 'deletedAt', 'deletedBy', 'deletedSource',
+        'deletionReason', 'ownerAccountDeleted', 'accountDeletionStatus'
+      ]);
+    }
+
+    function hasNoDeletionMetadata() {
+      return !request.resource.data.keys().hasAny([
+        'deletedAt', 'deletedBy', 'deletedSource', 'deletionReason',
+        'ownerAccountDeleted', 'accountDeletionStatus'
+      ]) && (!request.resource.data.keys().hasAny(['isDeleted'])
+        || request.resource.data.isDeleted == false);
+    }
+
+    function resourceIsActive() {
+      return !resource.data.keys().hasAny(['isDeleted'])
+        || resource.data.isDeleted == false;
+    }
+
+    function hasOnlyCustomerProfileDefaults() {
+      return request.resource.data.keys().hasAll([
+          'email', 'role', 'status', 'needsVerification', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'name', 'phone', 'address', 'photoURL',
+          'role', 'status', 'needsVerification', 'createdAt', 'updatedAt',
+          'bugBucks', 'cashBonusBalance', 'totalReferrals',
+          'convertedReferrals', 'totalTasks', 'pendingTasks'
+        ])
+        && request.resource.data.role == 'customer'
+        && request.resource.data.status == 'active'
+        && request.resource.data.needsVerification == false
+        && (!request.resource.data.keys().hasAny(['bugBucks'])
+          || request.resource.data.bugBucks == 0)
+        && (!request.resource.data.keys().hasAny(['cashBonusBalance'])
+          || request.resource.data.cashBonusBalance == 0)
+        && (!request.resource.data.keys().hasAny(['totalReferrals'])
+          || request.resource.data.totalReferrals == 0)
+        && (!request.resource.data.keys().hasAny(['convertedReferrals'])
+          || request.resource.data.convertedReferrals == 0)
+        && (!request.resource.data.keys().hasAny(['totalTasks'])
+          || request.resource.data.totalTasks == 0)
+        && (!request.resource.data.keys().hasAny(['pendingTasks'])
+          || request.resource.data.pendingTasks == 0);
+    }
+
+    function isProfileOnlyUpdate() {
+      return resource.data.status != 'deleted'
+        && (!resource.data.keys().hasAny(['isDeleted'])
+          || resource.data.isDeleted == false)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'displayName', 'name', 'email', 'phone', 'address', 'photoURL',
+        'updatedAt'
+      ]);
+    }
+
+    function isValidRoleRequestTransition() {
+      return resource.data.keys().hasAll(['role', 'status', 'needsVerification'])
+          && request.resource.data.keys().hasAll([
+            'role', 'status', 'needsVerification', 'requestedRole'
+          ])
+        ? resource.data.role == 'customer'
+          && resource.data.status == 'active'
+          && resource.data.needsVerification == false
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.status == 'pending'
+          && request.resource.data.needsVerification == true
+          && request.resource.data.requestedRole == 'employee'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'needsVerification', 'requestedRole', 'status', 'updatedAt'
+          ])
+        : false;
     }
 
     // ─── users/{uid} ────────────────────────────────────────────────────
-    // The profile doc — owner reads/writes themselves, admins manage anyone.
+    // Owners can maintain ordinary profile fields and initiate the one supported
+    // role-request transition. Authorization, rewards, counters, and review
+    // metadata are trusted-server/admin-claim fields.
     match /users/{uid} {
-      allow read, update, delete: if isOwner(uid) || isAdmin();
-      allow create: if isOwner(uid) || isAdmin();
+      allow read: if isOwner(uid) || isAdmin();
+      allow delete: if false;
+      allow create: if (isAdmin() && hasNoDeletionMetadata())
+        || (isOwner(uid) && hasOnlyCustomerProfileDefaults());
+      allow update: if (isAdmin() && resourceIsActive()
+          && doesNotChangeDeletionMetadata())
+        || (isOwner(uid) && (isProfileOnlyUpdate() || isValidRoleRequestTransition()));
     }
 
     // ─── referrals/{id} ─────────────────────────────────────────────────
-    // Customers can create + read + delete their own referrals.
-    // Admins can read/update/delete any referral.
+    // The callable backend is the sole referral creation/reward path.
+    // Customers can read their own legacy and callable-created records;
+    // claimed admins retain the existing approval/conversion workflow.
     match /referrals/{id} {
-      allow read, delete: if isOwner(resource.data.customerId) || isAdmin();
-      allow create: if isOwner(request.resource.data.customerId);
-      allow update: if isAdmin();
+      allow read: if (isOwner(resource.data.customerId)
+          && isActiveProfile(request.auth.uid)) || isAdmin();
+      allow create: if isAdmin() && hasNoDeletionMetadata();
+      allow update: if isAdmin() && resourceIsActive()
+        && doesNotChangeDeletionMetadata();
+      allow delete: if false;
     }
 
     // ─── employee_tasks/{id} ────────────────────────────────────────────
-    // Employees create their own tasks; only admins can approve/reject.
+    // The callable is the sole employee task creation path.
     match /employee_tasks/{id} {
-      allow read, delete: if isOwner(resource.data.employeeId) || isAdmin();
-      allow create: if isOwner(request.resource.data.employeeId);
-      allow update: if isAdmin();
+      allow read: if (isOwner(resource.data.employeeId)
+          && isActiveProfile(request.auth.uid)) || isAdmin();
+      allow create: if isAdmin() && hasNoDeletionMetadata();
+      allow update: if isAdmin() && resourceIsActive()
+        && doesNotChangeDeletionMetadata();
+      allow delete: if false;
     }
 
     // ─── employee_cashouts/{id} ─────────────────────────────────────────
-    // Legacy collection — owner can delete (for account deletion), admins manage.
+    // Legacy financial records are backend/admin managed; owners can read only.
     match /employee_cashouts/{id} {
-      allow read, delete: if isOwner(resource.data.employeeId) || isAdmin();
-      allow create, update: if isAdmin();
+      allow read: if isOwner(resource.data.employeeId) || isAdmin();
+      allow create: if isAdmin() && hasNoDeletionMetadata();
+      allow update: if isAdmin() && resourceIsActive()
+        && doesNotChangeDeletionMetadata();
+      allow delete: if false;
     }
 
     // ─── bugbucks_transactions/{id} ─────────────────────────────────────
-    // Auto-written by the app's referral submission flow (which is signed in
-    // as the owner), so owners can create their own. Admins can manage any.
+    // Reward ledger entries are immutable to owners; claimed admins manage them.
     match /bugbucks_transactions/{id} {
-      allow read, delete: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isOwner(request.resource.data.userId) || isAdmin();
-      allow update: if isAdmin();
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAdmin() && hasNoDeletionMetadata();
+      allow update: if false;
+      allow delete: if false;
     }
 
     // ─── cash_bonus_transactions/{id} ───────────────────────────────────
-    // Written by admins when approving employee tasks. Owners can read/delete.
+    // Written by admins when approving employee tasks. Owners can only read.
     match /cash_bonus_transactions/{id} {
-      allow read, delete: if isOwner(resource.data.userId) || isAdmin();
-      allow create, update: if isAdmin();
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAdmin() && hasNoDeletionMetadata();
+      allow update: if false;
+      allow delete: if false;
     }
 
     // ─── role_requests/{id} ─────────────────────────────────────────────
     // User creates a request for themselves; admin approves/rejects.
     match /role_requests/{id} {
-      allow read, delete: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isOwner(request.resource.data.userId);
-      allow update: if isAdmin();
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow delete: if false;
+      allow create: if isOwner(request.resource.data.userId)
+        && isActiveProfile(request.auth.uid)
+        && request.resource.data.requestedRole == 'employee'
+        && request.resource.data.status == 'pending'
+        && request.resource.data.isDeleted == false
+        && hasNoDeletionMetadata()
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedBy == null;
+      allow update: if isAdmin() && resourceIsActive()
+        && doesNotChangeDeletionMetadata();
     }
 
     // ─── notifications/{id} ─────────────────────────────────────────────
     // Server / admin actions fan out notifications. Users read + dismiss their own.
     match /notifications/{id} {
-      allow read, update, delete: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isAdmin();
+      allow read: if (isOwner(resource.data.userId)
+          && isActiveProfile(request.auth.uid)) || isAdmin();
+      allow update: if (isOwner(resource.data.userId) || isAdmin())
+        && resourceIsActive()
+        && doesNotChangeDeletionMetadata();
+      allow delete: if false;
+      allow create: if isAdmin() && hasNoDeletionMetadata();
     }
 
     // ─── app_settings/{id} ──────────────────────────────────────────────
@@ -102,7 +217,8 @@ service cloud.firestore {
     // ─── audit_logs/{id} ────────────────────────────────────────────────
     // Admin-only.
     match /audit_logs/{id} {
-      allow read, write: if isAdmin();
+      allow read, create: if isAdmin();
+      allow update, delete: if false;
     }
   }
 }

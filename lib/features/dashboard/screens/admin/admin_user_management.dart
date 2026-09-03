@@ -18,6 +18,7 @@ class _AdminUserManagementScreenState
     extends ConsumerState<AdminUserManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _showDeleted = false;
 
   @override
   void dispose() {
@@ -62,9 +63,18 @@ class _AdminUserManagementScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFFDFAF6),
       appBar: AppBar(
-        title: const Text('User Management'),
+        title: Text(_showDeleted ? 'Deleted Accounts' : 'User Management'),
         backgroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: _showDeleted
+                ? 'Show active users'
+                : 'Show deleted accounts',
+            icon: Icon(_showDeleted ? Icons.people : Icons.history),
+            onPressed: () => setState(() => _showDeleted = !_showDeleted),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -83,10 +93,7 @@ class _AdminUserManagementScreenState
                   color: Color(0xFF7F8C8D),
                   fontSize: 14,
                 ),
-                prefixIcon: const Icon(
-                  Icons.search,
-                  color: Color(0xFF7F8C8D),
-                ),
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF7F8C8D)),
                 suffixIcon: _searchQuery.isEmpty
                     ? null
                     : IconButton(
@@ -126,340 +133,359 @@ class _AdminUserManagementScreenState
             child: StreamBuilder<QuerySnapshot>(
               stream: usersStream,
               builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error, color: Colors.red, size: 48),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Error loading users',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Error: ${snapshot.error}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      // Retry
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final allUsers = snapshot.data?.docs ?? [];
-
-          // Apply the search filter — matches name, email, or role
-          // (case-insensitive). Empty query passes everything through.
-          final users = _searchQuery.isEmpty
-              ? allUsers
-              : allUsers.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final email = data['email']?.toString().toLowerCase() ?? '';
-                  final name = _getDisplayName(data, email).toLowerCase();
-                  final role = data['role']?.toString().toLowerCase() ?? '';
-                  return name.contains(_searchQuery) ||
-                      email.contains(_searchQuery) ||
-                      role.contains(_searchQuery);
-                }).toList();
-
-          if (allUsers.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.people_outline, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'No users found',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Users will appear here once they register',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          if (users.isEmpty) {
-            // Filter active but no matches — distinct from "no users at all".
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.search_off,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'No users match "${_searchController.text}"',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF2C3E50),
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Try a different name, email, or role.',
-                      style: TextStyle(color: Colors.grey),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton.icon(
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                      icon: const Icon(Icons.close, size: 18),
-                      label: const Text('Clear search'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF2E7D32),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            itemCount: users.length + 1,
-            itemBuilder: (context, index) {
-              // Result count strip — only shown above the list.
-              if (index == 0) {
-                final showing = users.length;
-                final total = allUsers.length;
-                return Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 12),
-                  child: Text(
-                    _searchQuery.isEmpty
-                        ? '$total ${total == 1 ? 'user' : 'users'}'
-                        : 'Showing $showing of $total',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF7F8C8D),
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                );
-              }
-              final user = users[index - 1];
-              final data = user.data() as Map<String, dynamic>;
-              final userId = user.id;
-              final email = data['email']?.toString() ?? 'No email';
-              final role = data['role']?.toString() ?? 'customer';
-              final status = data['status']?.toString() ?? 'active';
-              final displayName = _getDisplayName(data, email);
-              final createdAt = data['createdAt'] != null
-                  ? DateFormat(
-                      'MMM dd, yyyy',
-                    ).format((data['createdAt'] as Timestamp).toDate())
-                  : 'Unknown';
-              final bugBucks = (data['bugBucks'] as num?)?.toInt() ?? 0;
-              final cashBonus =
-                  (data['cashBonusBalance'] as num?)?.toDouble() ?? 0.0;
-              final phone = data['phone']?.toString() ?? 'Not provided';
-              final address = data['address']?.toString() ?? 'Not provided';
-
-              String getAvatarText(String name) {
-                if (name.isNotEmpty) {
-                  return name.substring(0, 1).toUpperCase();
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
                 }
-                return 'U';
-              }
 
-              final isActive = status == 'active';
-
-              void openActions() => _showUserActions(
-                    context,
-                    userId,
-                    role,
-                    displayName,
-                    email,
-                    bugBucks,
-                    cashBonus,
-                    phone,
-                    address,
-                    authUser?.uid ?? '',
-                    authUser?.email ?? 'Admin',
-                    status: status,
-                  );
-
-              return AppCard(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
-                onTap: openActions,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Avatar with subtle status dot overlay
-                    Stack(
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor: _getAvatarColor(role),
-                          child: Text(
-                            getAvatarText(displayName),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 18,
-                            ),
+                        const Icon(Icons.error, color: Colors.red, size: 48),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Error loading users',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? const Color(0xFF4CAF50)
-                                  : Colors.grey,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 2,
-                              ),
-                            ),
-                          ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Error: ${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            // Retry
+                          },
+                          child: const Text('Retry'),
                         ),
                       ],
                     ),
-                    const SizedBox(width: 12),
-                    // Identity + inline stats
-                    Expanded(
+                  );
+                }
+
+                final allUsers = (snapshot.data?.docs ?? []).where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return _showDeleted
+                      ? data['isDeleted'] == true
+                      : data['isDeleted'] != true;
+                }).toList();
+
+                // Apply the search filter — matches name, email, or role
+                // (case-insensitive). Empty query passes everything through.
+                final users = _searchQuery.isEmpty
+                    ? allUsers
+                    : allUsers.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        final email =
+                            data['email']?.toString().toLowerCase() ?? '';
+                        final name = _getDisplayName(data, email).toLowerCase();
+                        final role =
+                            data['role']?.toString().toLowerCase() ?? '';
+                        return name.contains(_searchQuery) ||
+                            email.contains(_searchQuery) ||
+                            role.contains(_searchQuery);
+                      }).toList();
+
+                if (allUsers.isEmpty) {
+                  return const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.people_outline,
+                          size: 64,
+                          color: Colors.grey,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'No users found',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Users will appear here once they register',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                if (users.isEmpty) {
+                  // Filter active but no matches — distinct from "no users at all".
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  displayName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF2C3E50),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              RoleBadge(role: role),
-                            ],
+                          const Icon(
+                            Icons.search_off,
+                            size: 64,
+                            color: Colors.grey,
                           ),
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 14),
                           Text(
-                            email,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            'No users match "${_searchController.text}"',
                             style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF7F8C8D),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2C3E50),
                             ),
+                            textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 8),
-                          // Inline metric strip — bullet-separated for density.
-                          DefaultTextStyle(
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF7F8C8D),
-                            ),
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  isActive ? 'Active' : 'Inactive',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: isActive
-                                        ? const Color(0xFF4CAF50)
-                                        : Colors.grey,
-                                  ),
-                                ),
-                                const Text('·'),
-                                Text(
-                                  '$bugBucks BB',
-                                  style: const TextStyle(
-                                    color: Color(0xFF2E7D32),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const Text('·'),
-                                Text(
-                                  '\$${cashBonus.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF2E7D32),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const Text('·'),
-                                Text(
-                                  '${data['totalReferrals'] ?? 0} refs',
-                                  style: const TextStyle(
-                                    color: Colors.orange,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const Text('·'),
-                                Text('Joined $createdAt'),
-                              ],
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Try a different name, email, or role.',
+                            style: TextStyle(color: Colors.grey),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          TextButton.icon(
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                            icon: const Icon(Icons.close, size: 18),
+                            label: const Text('Clear search'),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF2E7D32),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    // Overflow menu — tap anywhere on card opens the same sheet
-                    // but this is an explicit affordance for the gesture.
-                    IconButton(
-                      icon: const Icon(
-                        Icons.more_vert,
-                        color: Color(0xFF7F8C8D),
+                  );
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  itemCount: users.length + 1,
+                  itemBuilder: (context, index) {
+                    // Result count strip — only shown above the list.
+                    if (index == 0) {
+                      final showing = users.length;
+                      final total = allUsers.length;
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 4, bottom: 12),
+                        child: Text(
+                          _searchQuery.isEmpty
+                              ? '$total ${total == 1 ? 'user' : 'users'}'
+                              : 'Showing $showing of $total',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF7F8C8D),
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      );
+                    }
+                    final user = users[index - 1];
+                    final data = user.data() as Map<String, dynamic>;
+                    final userId = user.id;
+                    final email = data['email']?.toString() ?? 'No email';
+                    final role = data['role']?.toString() ?? 'customer';
+                    final status = data['status']?.toString() ?? 'active';
+                    final displayName = _getDisplayName(data, email);
+                    final createdAt = data['createdAt'] != null
+                        ? DateFormat(
+                            'MMM dd, yyyy',
+                          ).format((data['createdAt'] as Timestamp).toDate())
+                        : 'Unknown';
+                    final bugBucks = (data['bugBucks'] as num?)?.toInt() ?? 0;
+                    final cashBonus =
+                        (data['cashBonusBalance'] as num?)?.toDouble() ?? 0.0;
+                    final phone = data['phone']?.toString() ?? 'Not provided';
+                    final address =
+                        data['address']?.toString() ?? 'Not provided';
+
+                    String getAvatarText(String name) {
+                      if (name.isNotEmpty) {
+                        return name.substring(0, 1).toUpperCase();
+                      }
+                      return 'U';
+                    }
+
+                    final isActive = status == 'active';
+
+                    void openActions() => _showUserActions(
+                      context,
+                      userId,
+                      role,
+                      displayName,
+                      email,
+                      bugBucks,
+                      cashBonus,
+                      phone,
+                      address,
+                      authUser?.uid ?? '',
+                      authUser?.email ?? 'Admin',
+                      status: status,
+                    );
+
+                    return AppCard(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.fromLTRB(14, 14, 6, 14),
+                      onTap: openActions,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Avatar with subtle status dot overlay
+                          Stack(
+                            children: [
+                              CircleAvatar(
+                                radius: 24,
+                                backgroundColor: _getAvatarColor(role),
+                                child: Text(
+                                  getAvatarText(displayName),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: isActive
+                                        ? const Color(0xFF4CAF50)
+                                        : Colors.grey,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 12),
+                          // Identity + inline stats
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        displayName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF2C3E50),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    RoleBadge(role: role),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  email,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF7F8C8D),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                // Inline metric strip — bullet-separated for density.
+                                DefaultTextStyle(
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF7F8C8D),
+                                  ),
+                                  child: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        isActive ? 'Active' : 'Inactive',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: isActive
+                                              ? const Color(0xFF4CAF50)
+                                              : Colors.grey,
+                                        ),
+                                      ),
+                                      const Text('·'),
+                                      Text(
+                                        '$bugBucks BB',
+                                        style: const TextStyle(
+                                          color: Color(0xFF2E7D32),
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const Text('·'),
+                                      Text(
+                                        '\$${cashBonus.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          color: Color(0xFF2E7D32),
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const Text('·'),
+                                      Text(
+                                        '${data['totalReferrals'] ?? 0} refs',
+                                        style: const TextStyle(
+                                          color: Colors.orange,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const Text('·'),
+                                      Text('Joined $createdAt'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // Overflow menu — tap anywhere on card opens the same sheet
+                          // but this is an explicit affordance for the gesture.
+                          IconButton(
+                            icon: const Icon(
+                              Icons.more_vert,
+                              color: Color(0xFF7F8C8D),
+                            ),
+                            tooltip: 'User actions',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: openActions,
+                          ),
+                        ],
                       ),
-                      tooltip: 'User actions',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: openActions,
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        },
-      ),
-            ), // close Expanded
-          ], // close Column children
-        ), // close Column
+                    );
+                  },
+                );
+              },
+            ),
+          ), // close Expanded
+        ], // close Column children
+      ), // close Column
     );
   }
 
@@ -548,14 +574,7 @@ class _AdminUserManagementScreenState
                 subtitle: Text('Current: ${role.toUpperCase()}'),
                 onTap: () {
                   Navigator.pop(context);
-                  _changeRole(
-                    context,
-                    userId,
-                    displayName,
-                    role,
-                    adminId,
-                    adminEmail,
-                  );
+                  _changeRole(context, userId, displayName, role);
                 },
               ),
               ListTile(
@@ -584,9 +603,7 @@ class _AdminUserManagementScreenState
                     'Deactivate User',
                     style: TextStyle(color: Colors.red),
                   ),
-                  subtitle: const Text(
-                    "Blocks sign-in until reactivated",
-                  ),
+                  subtitle: const Text("Blocks sign-in until reactivated"),
                   onTap: () {
                     Navigator.pop(context);
                     _deactivateUser(
@@ -1098,8 +1115,6 @@ class _AdminUserManagementScreenState
     String userId,
     String userName,
     String currentRole,
-    String adminId,
-    String adminEmail,
   ) {
     String selectedRole = currentRole;
     TextEditingController reasonController = TextEditingController();
@@ -1205,45 +1220,13 @@ class _AdminUserManagementScreenState
                   Navigator.pop(context);
 
                   try {
-                    await FirebaseFirestore.instance.runTransaction((
-                      transaction,
-                    ) async {
-                      // Update user role
-                      transaction.update(
-                        FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(userId),
-                        {
-                          'role': selectedRole,
-                          'previousRole': currentRole,
-                          'roleUpdatedAt': FieldValue.serverTimestamp(),
-                          'roleUpdatedBy': adminId,
-                          'roleUpdatedByEmail': adminEmail,
-                          'roleChangeReason': reasonController.text,
-                          'updatedAt': FieldValue.serverTimestamp(),
-                        },
-                      );
-
-                      // Create audit log
-                      transaction.set(
-                        FirebaseFirestore.instance
-                            .collection('audit_logs')
-                            .doc(),
-                        {
-                          'action': 'ROLE_CHANGE',
-                          'userId': userId,
-                          'userName': userName,
-                          'adminId': adminId,
-                          'adminEmail': adminEmail,
-                          'timestamp': FieldValue.serverTimestamp(),
-                          'details': {
-                            'previousRole': currentRole,
-                            'newRole': selectedRole,
-                            'reason': reasonController.text,
-                          },
-                        },
-                      );
-                    });
+                    await ref
+                        .read(authProvider.notifier)
+                        .setUserRole(
+                          userId: userId,
+                          role: selectedRole,
+                          reason: reasonController.text,
+                        );
 
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -1513,6 +1496,8 @@ class _AdminUserManagementScreenState
                 return const Center(child: CircularProgressIndicator());
               }
 
+              // This is an explicit admin account-history view, so archived
+              // referrals remain visible for audit purposes.
               final referrals = snapshot.data?.docs ?? [];
 
               if (referrals.isEmpty) {

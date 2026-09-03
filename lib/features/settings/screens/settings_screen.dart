@@ -25,7 +25,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
     final userEmail = user?.email ?? '';
-    final userName = user?.displayName ??
+    final userName =
+        user?.displayName ??
         (userEmail.isNotEmpty ? userEmail.split('@').first : 'User');
 
     return Scaffold(
@@ -195,9 +196,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Account'),
         content: const Text(
-          'Deleting your account will permanently remove your profile, '
-          'referrals, rewards, and associated data. This action cannot be '
-          'undone.',
+          'Deleting your account will deactivate access and remove your data '
+          'from normal app screens. Required transaction and audit history is '
+          'retained securely. This action cannot be undone in the app.',
         ),
         actions: [
           TextButton(
@@ -250,7 +251,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (password == null || password.isEmpty) return false; // cancelled
 
     try {
-      await ref.read(authProvider.notifier).reauthenticateWithPassword(password);
+      await ref
+          .read(authProvider.notifier)
+          .reauthenticateWithPassword(password);
       await ref.read(authProvider.notifier).deleteAccount();
       return true;
     } catch (e) {
@@ -298,8 +301,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       obscure ? Icons.visibility_off : Icons.visibility,
                       color: AppColors.textNeutral,
                     ),
-                    onPressed: () =>
-                        setDialogState(() => obscure = !obscure),
+                    onPressed: () => setDialogState(() => obscure = !obscure),
                   ),
                 ),
               ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart'; // For Clipboard
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -27,8 +26,8 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   String? _selectedServiceType;
   bool _isLoading = false;
   bool _formHasChanges = false; // Track form changes manually
-  bool _consentChecked = false; // Apple 5.1.1/5.1.2 — explicit consent gate
-  String? _referralCode;
+  bool _consentChecked = false;
+  String? _consentError;
 
   final List<Map<String, dynamic>> _serviceTypes = [
     {
@@ -78,7 +77,6 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   @override
   void initState() {
     super.initState();
-    _loadReferralCode();
 
     // Listen to all text controllers for changes
     _nameController.addListener(_updateFormChanges);
@@ -100,24 +98,6 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     });
   }
 
-  Future<void> _loadReferralCode() async {
-    try {
-      final code = await ref.read(referralProvider.notifier).getReferralCode();
-      setState(() {
-        _referralCode = code;
-      });
-    } catch (e) {
-      print('Error loading referral code: $e');
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load referral code: ${e.toString()}'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
-  }
-
   Future<void> _submitReferral() async {
     if (!_formKey.currentState!.validate()) {
       _showValidationError();
@@ -136,15 +116,10 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     }
 
     if (!_consentChecked) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please confirm you have permission to share this person\'s information.',
-          ),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      setState(() {
+        _consentError =
+            'Please confirm that you have permission to share this person\'s information.';
+      });
       return;
     }
 
@@ -167,6 +142,9 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
       // Show success dialog
       await _showSuccessDialog(result['message'] as String);
 
+      // Refresh before leaving so the previous screen shows the new referral.
+      await ref.read(referralListProvider.notifier).refresh();
+
       // Clear form
       _clearForm();
 
@@ -174,8 +152,8 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
       if (mounted) {
         Navigator.pop(context);
       }
-    } catch (e) {
-      _showErrorDialog(e.toString());
+    } catch (error) {
+      _showErrorDialog(error);
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -208,54 +186,12 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(message),
-            const SizedBox(height: 16),
-            if (_referralCode != null) ...[
-              const Text(
-                'Share your referral code:',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: () => _copyToClipboard(_referralCode!),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.primary),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _referralCode!,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const Icon(Icons.copy, size: 20),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
+          children: [Text(message)],
         ),
         actions: [
           TextButton(
             onPressed: () {
               Navigator.pop(context); // Close dialog
-
-              // Refresh the referral list provider
-              ref.read(referralListProvider.notifier).refresh();
-
-              // Clear form and navigate back
-              _clearForm();
-              Navigator.pop(context);
             },
             child: const Text('OK'),
           ),
@@ -264,7 +200,10 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     );
   }
 
-  void _showErrorDialog(String error) {
+  void _showErrorDialog(Object error) {
+    final message = error is ReferralSubmissionException
+        ? error.userMessage
+        : 'We could not submit your referral.';
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -275,9 +214,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
             Text('Submission Failed'),
           ],
         ),
-        content: Text(
-          'There was an error submitting your referral:\n\n$error\n\nPlease try again.',
-        ),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -289,6 +226,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   }
 
   void _clearForm() {
+    ref.read(referralProvider.notifier).resetState();
     _nameController.clear();
     _emailController.clear();
     _phoneController.clear();
@@ -296,22 +234,11 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     _notesController.clear();
     setState(() {
       _selectedServiceType = null;
+      _consentChecked = false;
+      _consentError = null;
       _formHasChanges = false;
     });
     _formKey.currentState?.reset();
-  }
-
-  Future<void> _copyToClipboard(String text) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Referral code copied to clipboard!'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
   }
 
   String? _validatePhone(String? value) {
@@ -380,9 +307,9 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Submit a referral and earn 100 Bug Bucks immediately. '
+                      'Submit a referral and earn a Bug Bucks reward. '
                       'Bug Bucks are redeemable for discounts on your next '
-                      'Dowell pest-control service.',
+                      'Dowell Pest Control service.',
                       style: TextStyle(color: AppColors.textNeutral),
                     ),
                     const SizedBox(height: 8),
@@ -394,39 +321,18 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(0.1),
+                            color: Colors.amber.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(color: Colors.amber),
                           ),
                           child: const Text(
-                            '+100 Bug Bucks',
+                            'Bug Bucks Reward',
                             style: TextStyle(
                               color: Colors.amber,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
-                        const Spacer(),
-                        if (_referralCode != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppColors.primary),
-                            ),
-                            child: Text(
-                              'Code: $_referralCode',
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ],
@@ -565,7 +471,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                           child: Container(
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? AppColors.primary.withOpacity(0.1)
+                                  ? AppColors.primary.withValues(alpha: 0.1)
                                   : Colors.white,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
@@ -642,8 +548,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
                           ),
                           SizedBox(height: 8),
                           Text(
-                            '• By submitting this referral, you confirm you have permission to share this contact information.\n'
-                            '• Bug Bucks are awarded immediately upon submission.\n'
+                            '• Bug Bucks rewards are set by Dowell Pest Control and awarded upon submission.\n'
                             '• Referrals will be contacted within 24-48 hours.\n'
                             '• You can track referral status in your dashboard.',
                             style: TextStyle(
@@ -658,51 +563,51 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
 
                     const SizedBox(height: 16),
 
-                    /// Mandatory third-party-consent gate (Apple 5.1.1 / 5.1.2)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Checkbox(
-                            value: _consentChecked,
-                            onChanged: _isLoading
-                                ? null
-                                : (v) =>
-                                      setState(() => _consentChecked = v ?? false),
-                            activeColor: AppColors.primary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                          const Expanded(
-                            child: Padding(
-                              padding: EdgeInsets.only(top: 12),
-                              child: Text(
-                                'I confirm I have this person\'s permission to share their name, email, phone, and address with Dowell for the purpose of a service referral.',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.textDark,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                    CheckboxListTile(
+                      key: const Key('referralConsentCheckbox'),
+                      value: _consentChecked,
+                      onChanged: _isLoading
+                          ? null
+                          : (value) {
+                              setState(() {
+                                _consentChecked = value ?? false;
+                                _consentError = null;
+                                _formHasChanges =
+                                    _formHasChanges || _consentChecked;
+                              });
+                            },
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text(
+                        'I confirm I have this person\'s permission to share '
+                        'their name, email, phone, and address with Dowell Pest '
+                        'Control for the purpose of a service referral.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textDark,
+                        ),
                       ),
                     ),
+                    if (_consentError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, bottom: 8),
+                        child: Text(
+                          _consentError!,
+                          key: const Key('referralConsentError'),
+                          style: const TextStyle(
+                            color: AppColors.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
 
                     // Submit Button
                     PrimaryButton(
+                      key: const Key('submitReferralButton'),
                       text: _isLoading ? 'Submitting...' : 'Submit Referral',
-                      onPressed: (_isLoading || !_consentChecked)
-                          ? null
-                          : _submitReferral,
+                      onPressed: _isLoading ? null : _submitReferral,
                       isLoading: _isLoading,
                     ),
 
@@ -772,6 +677,8 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     );
 
     if (result == true && mounted) {
+      await ref.read(referralProvider.notifier).resetState();
+      if (!mounted) return;
       Navigator.pop(context);
     }
   }

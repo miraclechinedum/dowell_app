@@ -1,6 +1,9 @@
 # Miscellaneous
 *.class
 *.log
+# Firebase Emulator Suite diagnostics
+firebase-debug.log
+firestore-debug.log
 *.pyc
 *.swp
 .DS_Store

@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.keys().hasAny(['admin'])
+        && request.auth.token.admin == true;
+    }
+
+    function isEmployee(uid) {
+      return isSignedIn()
+        && request.auth.uid == uid
+        && request.auth.token.keys().hasAny(['employee'])
+        && request.auth.token.employee == true;
+    }
+
+    function isValidEvidence() {
+      return request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)')
+        && !request.resource.metadata.keys().hasAny(['archived']);
+    }
+
+    match /task_evidence/{uid}/{requestId}/{fileName} {
+      allow read: if isAdmin()
+        || (isEmployee(uid)
+          && !resource.metadata.keys().hasAny(['archived']));
+      // Firebase download tokens are server-managed metadata; rules cannot
+      // reliably prevent their issuance. Archival scrubs URLs and revokes
+      // metadata through the trusted backend.
+      allow create: if isEmployee(uid) && isValidEvidence();
+      allow update: if isEmployee(uid)
+        && !resource.metadata.keys().hasAny(['archived'])
+        && isValidEvidence();
+      allow delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

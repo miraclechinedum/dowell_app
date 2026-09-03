@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/account_deletion_service.dart';
 
@@ -44,9 +45,12 @@ class AuthProvider extends StateNotifier<AuthState> {
     _initializeAuthListener();
   }
 
+  final Set<String> _claimRefreshAttempted = <String>{};
+
   void _initializeAuthListener() {
-    FirebaseAuth.instance.authStateChanges().listen((User? user) async {
+    FirebaseAuth.instance.idTokenChanges().listen((User? user) async {
       if (user == null) {
+        _claimRefreshAttempted.clear();
         state = const AuthState(status: AuthStatus.unauthenticated);
       } else {
         try {
@@ -57,11 +61,33 @@ class AuthProvider extends StateNotifier<AuthState> {
 
           if (userDoc.exists) {
             final userData = userDoc.data()!;
-            final userRole = userData['role'] as String? ?? 'customer';
+            if (userData['isDeleted'] == true ||
+                userData['status'] == 'deleted') {
+              await FirebaseAuth.instance.signOut();
+              state = const AuthState(status: AuthStatus.unauthenticated);
+              return;
+            }
+            var token = await user.getIdTokenResult();
+            var claims = token.claims ?? const <String, dynamic>{};
+            final profileRole = userData['role'] as String? ?? 'customer';
+            final claimRole = claims['admin'] == true
+                ? 'admin'
+                : claims['employee'] == true
+                ? 'employee'
+                : 'customer';
+            if (profileRole != claimRole &&
+                !_claimRefreshAttempted.contains(user.uid)) {
+              _claimRefreshAttempted.add(user.uid);
+              token = await user.getIdTokenResult(true);
+              claims = token.claims ?? const <String, dynamic>{};
+            }
+            final userRole = claims['admin'] == true
+                ? 'admin'
+                : claims['employee'] == true
+                ? 'employee'
+                : 'customer';
             final needsVerification =
                 userData['needsVerification'] as bool? ?? false;
-            final userStatus = userData['status'] as String? ?? 'active';
-
             state = AuthState(
               status: AuthStatus.authenticated,
               user: user,
@@ -79,12 +105,8 @@ class AuthProvider extends StateNotifier<AuthState> {
           }
         } catch (e) {
           print("❌ Error fetching user data: $e");
-          state = AuthState(
-            status: AuthStatus.authenticated,
-            user: user,
-            userRole: 'customer',
-            needsVerification: false,
-          );
+          await FirebaseAuth.instance.signOut();
+          state = const AuthState(status: AuthStatus.unauthenticated);
         }
       }
     });
@@ -152,6 +174,7 @@ class AuthProvider extends StateNotifier<AuthState> {
         'userId': userId,
         'requestedRole': requestedRole,
         'status': 'pending',
+        'isDeleted': false,
         'reason': reason,
         'requestedAt': FieldValue.serverTimestamp(),
         'reviewedAt': null,
@@ -173,37 +196,15 @@ class AuthProvider extends StateNotifier<AuthState> {
   }
 
   Future<void> approveRoleChange({
-    required String userId,
-    required String newRole,
-    required String adminId,
+    required String requestId,
     String? notes,
   }) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(userId).update({
-        'role': newRole,
-        'needsVerification': false,
-        'requestedRole': null,
-        'status': 'active',
-        'approvedBy': adminId,
-        'approvedAt': FieldValue.serverTimestamp(),
-        'approvalNotes': notes,
-        'updatedAt': FieldValue.serverTimestamp(),
+      await FirebaseFunctions.instance.httpsCallable('reviewRoleRequest').call({
+        'requestId': requestId,
+        'decision': 'approve',
+        'notes': notes,
       });
-
-      final requests = await FirebaseFirestore.instance
-          .collection('role_requests')
-          .where('userId', isEqualTo: userId)
-          .where('status', isEqualTo: 'pending')
-          .get();
-
-      for (var doc in requests.docs) {
-        await doc.reference.update({
-          'status': 'approved',
-          'reviewedAt': FieldValue.serverTimestamp(),
-          'reviewedBy': adminId,
-          'notes': notes,
-        });
-      }
 
       print("✅ Role approved successfully");
     } catch (e) {
@@ -213,41 +214,33 @@ class AuthProvider extends StateNotifier<AuthState> {
   }
 
   Future<void> rejectRoleChange({
-    required String userId,
-    required String adminId,
+    required String requestId,
     String? reason,
   }) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(userId).update({
-        'needsVerification': false,
-        'requestedRole': null,
-        'status': 'active',
-        'rejectedBy': adminId,
-        'rejectedAt': FieldValue.serverTimestamp(),
-        'rejectionReason': reason,
-        'updatedAt': FieldValue.serverTimestamp(),
+      await FirebaseFunctions.instance.httpsCallable('reviewRoleRequest').call({
+        'requestId': requestId,
+        'decision': 'reject',
+        'notes': reason,
       });
-
-      final requests = await FirebaseFirestore.instance
-          .collection('role_requests')
-          .where('userId', isEqualTo: userId)
-          .where('status', isEqualTo: 'pending')
-          .get();
-
-      for (var doc in requests.docs) {
-        await doc.reference.update({
-          'status': 'rejected',
-          'reviewedAt': FieldValue.serverTimestamp(),
-          'reviewedBy': adminId,
-          'rejectionReason': reason,
-        });
-      }
 
       print("✅ Role rejected successfully");
     } catch (e) {
       print("❌ Error rejecting role: $e");
       throw e;
     }
+  }
+
+  Future<void> setUserRole({
+    required String userId,
+    required String role,
+    required String reason,
+  }) async {
+    await FirebaseFunctions.instance.httpsCallable('setUserRole').call({
+      'targetUid': userId,
+      'role': role,
+      'reason': reason,
+    });
   }
 
   void updateUserRole(String role) {
@@ -268,16 +261,6 @@ class AuthProvider extends StateNotifier<AuthState> {
     return logout();
   }
 
-  /// Permanently deletes the signed-in user's account and all associated data.
-  ///
-  /// Firestore data is removed first (while the user is still authenticated and
-  /// owner security rules apply), then the Firebase Authentication account is
-  /// deleted so the user can never sign back in.
-  ///
-  /// Throws [FirebaseAuthException] with code `requires-recent-login` when the
-  /// caller must re-authenticate (see [reauthenticateWithPassword]) before the
-  /// auth account can be deleted. The data deletion step is idempotent, so it
-  /// is safe to call this method again after re-authenticating.
   Future<void> deleteAccount() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -287,16 +270,19 @@ class AuthProvider extends StateNotifier<AuthState> {
       );
     }
 
-    // 1. Remove all Firestore data owned by the user.
-    await AccountDeletionService.deleteUserData(user.uid);
+    await AccountDeletionService.deleteMyAccountData();
 
-    // 2. Delete the authentication account. May throw requires-recent-login.
-    await AccountDeletionService.deleteAuthAccount();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('pending_referral_request_${user.uid}');
+    await prefs.remove('pending_referral_fingerprint_${user.uid}');
+    await prefs.remove('pending_task_request_${user.uid}');
+    await prefs.remove('pending_task_fingerprint_${user.uid}');
+    await FirebaseAuth.instance.signOut();
 
     // authStateChanges() will also fire with null, but update eagerly so the
     // UI reflects the signed-out state immediately.
     state = const AuthState(status: AuthStatus.unauthenticated);
-    print("✅ Account deleted successfully");
+    print("✅ Account deactivated successfully");
   }
 
   /// Re-authenticates the current user with their [password] so that a

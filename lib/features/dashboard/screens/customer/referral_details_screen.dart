@@ -40,7 +40,7 @@ class _ReferralDetailsScreenState extends ConsumerState<ReferralDetailsScreen> {
           .doc(widget.referralId)
           .get();
 
-      if (!doc.exists) {
+      if (!doc.exists || doc.data()?['isDeleted'] == true) {
         setState(() {
           _error = 'Referral not found';
           _isLoading = false;
@@ -308,7 +308,7 @@ class _ReferralDetailsScreenState extends ConsumerState<ReferralDetailsScreen> {
     }
 
     final status = _referral!['status'] as String? ?? 'pending';
-    final bugBucks = _referral!['bugBucksAwarded'] as int? ?? 0;
+    final bugBucks = (_referral!['bugBucksAwarded'] as num?)?.toInt() ?? 0;
 
     return Scaffold(
       appBar: AppBar(

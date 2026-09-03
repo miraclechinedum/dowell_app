@@ -53,6 +53,7 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
   final List<String> _priorities = ['low', 'medium', 'high'];
 
   bool _isSubmitting = false;
+  final EmployeeService _employeeService = EmployeeService();
 
   Future<void> _pickImages() async {
     try {
@@ -107,7 +108,6 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
       });
 
       try {
-        final employeeService = EmployeeService();
         final user = ref.read(authProvider).user;
 
         if (user == null) {
@@ -118,7 +118,7 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
         final amount = double.tryParse(_amountController.text) ?? 0.0;
 
         // Submit task to Firestore
-        final taskId = await employeeService.submitTask(
+        final taskId = await _employeeService.submitTask(
           title: _taskTitleController.text,
           description: _taskDescriptionController.text,
           customerName: _customerNameController.text,
@@ -224,10 +224,7 @@ class _SubmitTaskScreenState extends ConsumerState<SubmitTaskScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: AppColors.primary,
-          width: 1.6,
-        ),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
       ),
       filled: true,
       fillColor: Colors.white,

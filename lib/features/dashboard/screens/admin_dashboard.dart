@@ -38,7 +38,6 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       // Get all stats
       final usersSnapshot = await FirebaseFirestore.instance
           .collection('users')
-          .count()
           .get();
 
       final referralsSnapshot = await FirebaseFirestore.instance
@@ -62,10 +61,18 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       if (!mounted) return;
       setState(() {
         _stats = {
-          'totalUsers': usersSnapshot.count ?? 0,
-          'pendingReferrals': referralsSnapshot.docs.length,
-          'pendingTasks': tasksSnapshot.docs.length,
-          'pendingRoleRequests': roleRequestsSnapshot.docs.length,
+          'totalUsers': usersSnapshot.docs
+              .where((doc) => doc.data()['isDeleted'] != true)
+              .length,
+          'pendingReferrals': referralsSnapshot.docs
+              .where((doc) => doc.data()['isDeleted'] != true)
+              .length,
+          'pendingTasks': tasksSnapshot.docs
+              .where((doc) => doc.data()['isDeleted'] != true)
+              .length,
+          'pendingRoleRequests': roleRequestsSnapshot.docs
+              .where((doc) => doc.data()['isDeleted'] != true)
+              .length,
         };
         _isLoading = false;
       });
@@ -533,10 +540,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             leading: const Icon(Icons.people, color: Colors.blue),
             title: const Text('User Management'),
             trailing: FutureBuilder(
-              future: FirebaseFirestore.instance
-                  .collection('users')
-                  .count()
-                  .get(),
+              future: FirebaseFirestore.instance.collection('users').get(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const SizedBox(
@@ -545,7 +549,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   );
                 }
-                final count = snapshot.data?.count ?? 0;
+                final count =
+                    snapshot.data?.docs
+                        .where((doc) => doc.data()['isDeleted'] != true)
+                        .length ??
+                    0;
                 return Badge(
                   backgroundColor: Colors.blue,
                   label: Text(count.toString()),
@@ -578,7 +586,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   );
                 }
-                final count = snapshot.data?.docs.length ?? 0;
+                final count =
+                    snapshot.data?.docs.where((doc) {
+                      final data = doc.data();
+                      return data['isDeleted'] != true;
+                    }).length ??
+                    0;
                 return Badge(
                   backgroundColor: Colors.orange,
                   label: Text(count.toString()),
@@ -611,7 +624,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   );
                 }
-                final count = snapshot.data?.docs.length ?? 0;
+                final count =
+                    snapshot.data?.docs.where((doc) {
+                      final data = doc.data();
+                      return data['isDeleted'] != true;
+                    }).length ??
+                    0;
                 return Badge(
                   backgroundColor: Colors.blue,
                   label: Text(count.toString()),
@@ -644,7 +662,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   );
                 }
-                final count = snapshot.data?.docs.length ?? 0;
+                final count =
+                    snapshot.data?.docs.where((doc) {
+                      final data = doc.data();
+                      return data['isDeleted'] != true;
+                    }).length ??
+                    0;
                 return Badge(
                   backgroundColor: Colors.purple,
                   label: Text(count.toString()),
@@ -820,8 +843,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) =>
-                                const AdminReferralApprovalScreen(),
+                            builder: (_) => const AdminReferralApprovalScreen(),
                           ),
                         ),
                       ),
@@ -956,11 +978,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   ),
                   child: Icon(icon, color: color, size: 24),
                 ),
-                Icon(
-                  Icons.chevron_right,
-                  color: Colors.grey[400],
-                  size: 22,
-                ),
+                Icon(Icons.chevron_right, color: Colors.grey[400], size: 22),
               ],
             ),
             Column(
@@ -1111,13 +1129,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       final referrals = await FirebaseFirestore.instance
           .collection('referrals')
           .orderBy('createdAt', descending: true)
-          .limit(5)
+          .limit(15)
           .get();
 
       final tasks = await FirebaseFirestore.instance
           .collection('employee_tasks')
           .orderBy('createdAt', descending: true)
-          .limit(5)
+          .limit(15)
           .get();
 
       List<Map<String, dynamic>> activities = [];
@@ -1125,6 +1143,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       // Add referral activities
       for (var doc in referrals.docs) {
         final data = doc.data();
+        if (data['isDeleted'] == true) continue;
         final timestamp = data['createdAt'] as Timestamp?;
         final timeAgo = timestamp != null
             ? _getTimeAgo(timestamp.toDate())
@@ -1136,6 +1155,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           'subtitle':
               '${data['referralName'] ?? 'Unknown'} by ${data['customerName'] ?? 'Customer'}',
           'time': timeAgo,
+          '_timestamp': timestamp?.millisecondsSinceEpoch ?? 0,
           'color': Colors.orange,
         });
       }
@@ -1143,6 +1163,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       // Add task activities
       for (var doc in tasks.docs) {
         final data = doc.data();
+        if (data['isDeleted'] == true) continue;
         final timestamp = data['createdAt'] as Timestamp?;
         final timeAgo = timestamp != null
             ? _getTimeAgo(timestamp.toDate())
@@ -1154,16 +1175,15 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           'subtitle':
               '${data['taskType'] ?? 'Unknown'} by ${data['employeeName'] ?? 'Employee'}',
           'time': timeAgo,
+          '_timestamp': timestamp?.millisecondsSinceEpoch ?? 0,
           'color': Colors.blue,
         });
       }
 
       // Sort by time (most recent first)
-      activities.sort((a, b) {
-        // For demo, just sort by the order they were added
-        return 0;
-      });
-
+      activities.sort(
+        (a, b) => (b['_timestamp'] as int).compareTo(a['_timestamp'] as int),
+      );
       return activities.take(5).toList();
     } catch (e) {
       print('Error getting recent activity: $e');

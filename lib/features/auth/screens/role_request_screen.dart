@@ -265,9 +265,19 @@ class _RoleRequestScreenState extends ConsumerState<RoleRequestScreen> {
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(color: AppColors.buttonBorder),
                   ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: AppColors.buttonBorder,
+                      width: 1,
+                    ),
+                  ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary),
+                    borderSide: const BorderSide(
+                      color: AppColors.primary,
+                      width: 1.5,
+                    ),
                   ),
                 ),
               ),

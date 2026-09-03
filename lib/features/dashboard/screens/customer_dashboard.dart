@@ -20,8 +20,9 @@ import './customer/referrals_list_screen.dart';
 /// (permission-denied, network blip, missing doc) degrades to a zero in
 /// that field instead of throwing and forcing the dashboard into the
 /// error-fallback state.
-final customerStatsProvider =
-    FutureProvider.autoDispose<Map<String, int>>((ref) async {
+final customerStatsProvider = FutureProvider.autoDispose<Map<String, int>>((
+  ref,
+) async {
   final user = ref.watch(authProvider).user;
   if (user == null) {
     return const {
@@ -50,7 +51,9 @@ final customerStatsProvider =
         .get();
 
     for (final doc in referralsSnap.docs) {
-      final status = (doc.data()['status'] as String?) ?? '';
+      final data = doc.data();
+      if (data['isDeleted'] == true) continue;
+      final status = (data['status'] as String?) ?? '';
       // "contacted" is mid-pipeline work, surface it as Pending on the
       // dashboard so customers see their in-progress referrals.
       if (status == 'pending' || status == 'contacted') pending++;
@@ -126,10 +129,7 @@ class _CustomerDashboardScreenState
                             gradient: const LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [
-                                Color(0xFF388E3C),
-                                Color(0xFF1B5E20),
-                              ],
+                              colors: [Color(0xFF388E3C), Color(0xFF1B5E20)],
                             ),
                             borderRadius: BorderRadius.circular(32),
                             boxShadow: [
@@ -373,10 +373,7 @@ class _CustomerDashboardScreenState
   /// Renders the Bug Bucks balance card and the Pending/Converted referral
   /// stat row from real Firestore data. When [isLoading] is true (initial
   /// fetch in flight) the values render dimmed instead of jumping in.
-  Widget _buildStatsSection(
-    Map<String, int> stats, {
-    bool isLoading = false,
-  }) {
+  Widget _buildStatsSection(Map<String, int> stats, {bool isLoading = false}) {
     final bugBucks = stats['bugBucks'] ?? 0;
     final pending = stats['pendingReferrals'] ?? 0;
     final converted = stats['convertedReferrals'] ?? 0;

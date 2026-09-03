@@ -39,7 +39,8 @@ class _ReferralsListScreenState extends ConsumerState<ReferralsListScreen> {
     if (timestamp is Timestamp) {
       return DateFormat('MMM dd, yyyy').format(timestamp.toDate());
     }
-    if (timestamp is DateTime) return DateFormat('MMM dd, yyyy').format(timestamp);
+    if (timestamp is DateTime)
+      return DateFormat('MMM dd, yyyy').format(timestamp);
     if (timestamp is String) return timestamp;
     return 'N/A';
   }
@@ -235,15 +236,11 @@ class _ReferralsListScreenState extends ConsumerState<ReferralsListScreen> {
                 backgroundColor: Colors.white,
                 selectedColor: AppColors.primary.withOpacity(0.15),
                 side: BorderSide(
-                  color: isSelected
-                      ? AppColors.primary
-                      : Colors.grey.shade300,
+                  color: isSelected ? AppColors.primary : Colors.grey.shade300,
                 ),
                 labelStyle: TextStyle(
                   color: isSelected ? AppColors.primary : AppColors.textDark,
-                  fontWeight: isSelected
-                      ? FontWeight.w700
-                      : FontWeight.w500,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 ),
                 checkmarkColor: AppColors.primary,
                 shape: RoundedRectangleBorder(
@@ -311,12 +308,9 @@ class _ReferralsListScreenState extends ConsumerState<ReferralsListScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Submit your first referral to earn 100 Bug Bucks.',
+                'Submit your first referral to earn Bug Bucks.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textNeutral,
-                  height: 1.4,
-                ),
+                style: TextStyle(color: AppColors.textNeutral, height: 1.4),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
@@ -415,7 +409,11 @@ class _ReferralsListScreenState extends ConsumerState<ReferralsListScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(Icons.email_outlined, size: 14, color: AppColors.textNeutral),
+              const Icon(
+                Icons.email_outlined,
+                size: 14,
+                color: AppColors.textNeutral,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -432,7 +430,11 @@ class _ReferralsListScreenState extends ConsumerState<ReferralsListScreen> {
           const SizedBox(height: 4),
           Row(
             children: [
-              const Icon(Icons.phone_outlined, size: 14, color: AppColors.textNeutral),
+              const Icon(
+                Icons.phone_outlined,
+                size: 14,
+                color: AppColors.textNeutral,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(

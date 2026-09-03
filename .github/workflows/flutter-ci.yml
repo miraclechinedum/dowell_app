@@ -12,6 +12,41 @@ on:
   workflow_dispatch:
 
 jobs:
+  backend_security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - name: Set up Java for Firebase emulators
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm ci
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+      - name: Functions checks
+        working-directory: functions
+        run: |
+          node --version
+          npm run lint
+          npm run build
+          npm test
+          npm run test:rules
+          npm run test:storage-rules
+          npm run test:referrals
+          npm run test:tasks
+          npm run test:account-deletion
+          npm run test:reconciliation
+
   build_and_test:
     runs-on: ubuntu-latest
 
@@ -53,7 +88,7 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
 
   deploy_android:
-    needs: build_and_test
+    needs: [build_and_test, backend_security]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
 
@@ -81,7 +116,7 @@ jobs:
           track: internal
 
   deploy_ios:
-    needs: build_and_test
+    needs: [build_and_test, backend_security]
     runs-on: macos-latest
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
 

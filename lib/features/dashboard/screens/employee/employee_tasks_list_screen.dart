@@ -43,9 +43,7 @@ class _EmployeeTasksListScreenState
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
     if (user == null) {
-      return const Scaffold(
-        body: Center(child: Text('Not signed in')),
-      );
+      return const Scaffold(body: Center(child: Text('Not signed in')));
     }
     final employeeService = ref.watch(employeeServiceProvider);
 
@@ -67,7 +65,12 @@ class _EmployeeTasksListScreenState
             status: _filter == 'all' ? null : _filter,
           ),
           builder: (context, snapshot) {
-            final docs = snapshot.data?.docs ?? const <QueryDocumentSnapshot>[];
+            final docs =
+                snapshot.data?.docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['isDeleted'] != true;
+                }).toList() ??
+                const <QueryDocumentSnapshot>[];
             return Column(
               children: [
                 Padding(
@@ -202,15 +205,11 @@ class _EmployeeTasksListScreenState
                 backgroundColor: Colors.white,
                 selectedColor: AppColors.primary.withOpacity(0.15),
                 side: BorderSide(
-                  color: isSelected
-                      ? AppColors.primary
-                      : Colors.grey.shade300,
+                  color: isSelected ? AppColors.primary : Colors.grey.shade300,
                 ),
                 labelStyle: TextStyle(
                   color: isSelected ? AppColors.primary : AppColors.textDark,
-                  fontWeight: isSelected
-                      ? FontWeight.w700
-                      : FontWeight.w500,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 ),
                 checkmarkColor: AppColors.primary,
                 shape: RoundedRectangleBorder(
@@ -254,7 +253,12 @@ class _EmployeeTasksListScreenState
       );
     }
 
-    final docs = snapshot.data?.docs ?? const <QueryDocumentSnapshot>[];
+    final docs =
+        snapshot.data?.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return data['isDeleted'] != true;
+        }).toList() ??
+        const <QueryDocumentSnapshot>[];
     if (docs.isEmpty) {
       return Center(
         child: Padding(
@@ -293,9 +297,7 @@ class _EmployeeTasksListScreenState
               ElevatedButton.icon(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const SubmitTaskScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const SubmitTaskScreen()),
                 ),
                 icon: const Icon(Icons.add_task),
                 label: const Text('Submit New Task'),
@@ -497,7 +499,8 @@ class _EmployeeTasksListScreenState
     final notes = task['notes'] as String? ?? '';
     final adminNotes = task['adminNotes'] as String? ?? '';
     final createdAt = task['createdAt'] as Timestamp?;
-    final images = (task['images'] as List?)?.cast<String>() ?? const <String>[];
+    final images =
+        (task['images'] as List?)?.cast<String>() ?? const <String>[];
 
     showModalBottomSheet<void>(
       context: context,
@@ -567,10 +570,7 @@ class _EmployeeTasksListScreenState
                     if (customerAddress.isNotEmpty && customerAddress != '—')
                       _detailRow('Customer address', customerAddress),
                     _detailRow('Priority', priority),
-                    _detailRow(
-                      'Task amount',
-                      '\$${amount.toStringAsFixed(2)}',
-                    ),
+                    _detailRow('Task amount', '\$${amount.toStringAsFixed(2)}'),
                     if (cashBonusAwarded > 0)
                       _detailRow(
                         'Cash bonus awarded',

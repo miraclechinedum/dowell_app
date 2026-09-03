@@ -74,7 +74,10 @@ class _AdminReferralApprovalScreenState
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
 
-                final referrals = snapshot.data?.docs ?? [];
+                final referrals = (snapshot.data?.docs ?? []).where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['isDeleted'] != true;
+                }).toList();
 
                 if (referrals.isEmpty) {
                   return Center(
@@ -135,18 +138,14 @@ class _AdminReferralApprovalScreenState
         backgroundColor: Colors.white,
         selectedColor: const Color(0xFF2E7D32).withOpacity(0.15),
         side: BorderSide(
-          color: isSelected
-              ? const Color(0xFF2E7D32)
-              : Colors.grey.shade300,
+          color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade300,
         ),
         labelStyle: TextStyle(
           color: isSelected ? const Color(0xFF2E7D32) : const Color(0xFF2C3E50),
           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
         ),
         checkmarkColor: const Color(0xFF2E7D32),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
     );
   }
@@ -196,23 +195,14 @@ class _AdminReferralApprovalScreenState
   /// Returns [totalReferrals, pendingCount, convertedCount].
   Future<List<int>> _fetchStatsCounts() async {
     try {
-      final results = await Future.wait([
-        _firestore.collection('referrals').count().get(),
-        _firestore
-            .collection('referrals')
-            .where('status', isEqualTo: 'pending')
-            .count()
-            .get(),
-        _firestore
-            .collection('referrals')
-            .where('status', isEqualTo: 'converted')
-            .count()
-            .get(),
-      ]);
+      final snapshot = await _firestore.collection('referrals').get();
+      final active = snapshot.docs
+          .where((doc) => doc.data()['isDeleted'] != true)
+          .toList();
       return [
-        results[0].count ?? 0,
-        results[1].count ?? 0,
-        results[2].count ?? 0,
+        active.length,
+        active.where((doc) => doc.data()['status'] == 'pending').length,
+        active.where((doc) => doc.data()['status'] == 'converted').length,
       ];
     } catch (_) {
       return const [0, 0, 0];
@@ -726,5 +716,4 @@ class _AdminReferralApprovalScreenState
       ),
     );
   }
-
 }

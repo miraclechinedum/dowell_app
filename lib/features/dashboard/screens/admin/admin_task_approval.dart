@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../../../../core/providers/auth_provider.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_badge.dart';
@@ -54,6 +55,7 @@ class _AdminTaskApprovalScreenState
                   _buildFilterChip('pending', 'Pending'),
                   _buildFilterChip('approved', 'Approved'),
                   _buildFilterChip('rejected', 'Rejected'),
+                  _buildFilterChip('outstanding', 'Deleted / Unpaid'),
                 ],
               ),
             ),
@@ -61,10 +63,18 @@ class _AdminTaskApprovalScreenState
           // Tasks List
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('employee_tasks')
-                  .where('status', isEqualTo: _selectedFilter)
-                  .snapshots(),
+              stream: _selectedFilter == 'outstanding'
+                  ? _firestore
+                        .collection('employee_tasks')
+                        .where(
+                          'deletedOwnerTaskState',
+                          isEqualTo: 'outstanding_payment',
+                        )
+                        .snapshots()
+                  : _firestore
+                        .collection('employee_tasks')
+                        .where('status', isEqualTo: _selectedFilter)
+                        .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -74,7 +84,13 @@ class _AdminTaskApprovalScreenState
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
 
-                final tasks = snapshot.data?.docs ?? [];
+                final tasks = (snapshot.data?.docs ?? []).where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return _selectedFilter == 'outstanding'
+                      ? data['isDeleted'] == true &&
+                            data['settlementStatus'] != 'completed'
+                      : data['isDeleted'] != true;
+                }).toList();
 
                 if (tasks.isEmpty) {
                   return Center(
@@ -135,18 +151,14 @@ class _AdminTaskApprovalScreenState
         backgroundColor: Colors.white,
         selectedColor: const Color(0xFF2E7D32).withOpacity(0.15),
         side: BorderSide(
-          color: isSelected
-              ? const Color(0xFF2E7D32)
-              : Colors.grey.shade300,
+          color: isSelected ? const Color(0xFF2E7D32) : Colors.grey.shade300,
         ),
         labelStyle: TextStyle(
           color: isSelected ? const Color(0xFF2E7D32) : const Color(0xFF2C3E50),
           fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
         ),
         checkmarkColor: const Color(0xFF2E7D32),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
     );
   }
@@ -195,23 +207,14 @@ class _AdminTaskApprovalScreenState
   /// Returns [totalTasks, pendingCount, approvedCount].
   Future<List<int>> _fetchStatsCounts() async {
     try {
-      final results = await Future.wait([
-        _firestore.collection('employee_tasks').count().get(),
-        _firestore
-            .collection('employee_tasks')
-            .where('status', isEqualTo: 'pending')
-            .count()
-            .get(),
-        _firestore
-            .collection('employee_tasks')
-            .where('status', isEqualTo: 'approved')
-            .count()
-            .get(),
-      ]);
+      final snapshot = await _firestore.collection('employee_tasks').get();
+      final active = snapshot.docs
+          .where((doc) => doc.data()['isDeleted'] != true)
+          .toList();
       return [
-        results[0].count ?? 0,
-        results[1].count ?? 0,
-        results[2].count ?? 0,
+        active.length,
+        active.where((doc) => doc.data()['status'] == 'pending').length,
+        active.where((doc) => doc.data()['status'] == 'approved').length,
       ];
     } catch (_) {
       return const [0, 0, 0];
@@ -271,7 +274,10 @@ class _AdminTaskApprovalScreenState
     final employeeName = data['employeeName'] ?? 'Unknown Employee';
     final customerDetails = data['customerDetails'] ?? 'No details';
     final notes = data['notes'] ?? '';
-    final images = List<String>.from(data['images'] ?? []);
+    final isArchived = data['isDeleted'] == true;
+    final images = List<String>.from(
+      isArchived ? data['imagePaths'] ?? [] : data['images'] ?? [],
+    );
     final status = data['status'] ?? 'pending';
     final cashBonus = data['cashBonusAwarded'] ?? 0.0;
     final createdAt = data['createdAt'] != null
@@ -400,11 +406,31 @@ class _AdminTaskApprovalScreenState
                     margin: const EdgeInsets.only(right: 8),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(8),
-                      image: DecorationImage(
-                        image: NetworkImage(images[imgIndex]),
-                        fit: BoxFit.cover,
-                      ),
                     ),
+                    clipBehavior: Clip.antiAlias,
+                    child: isArchived
+                        ? FutureBuilder(
+                            future: FirebaseStorage.instance
+                                .ref(images[imgIndex])
+                                .getData(10 * 1024 * 1024),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData) {
+                                return Image.memory(
+                                  snapshot.data!,
+                                  fit: BoxFit.cover,
+                                );
+                              }
+                              if (snapshot.hasError) {
+                                return const Icon(Icons.broken_image);
+                              }
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              );
+                            },
+                          )
+                        : Image.network(images[imgIndex], fit: BoxFit.cover),
                   );
                 },
               ),
@@ -789,5 +815,4 @@ class _AdminTaskApprovalScreenState
       ),
     );
   }
-
 }

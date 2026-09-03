@@ -66,7 +66,10 @@ class _AdminRoleRequestsScreenState
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
 
-                final requests = snapshot.data?.docs ?? [];
+                final requests = (snapshot.data?.docs ?? []).where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return data['isDeleted'] != true;
+                }).toList();
 
                 if (requests.isEmpty) {
                   return Center(
@@ -151,7 +154,11 @@ class _AdminRoleRequestsScreenState
                     .where('status', isEqualTo: value)
                     .get(),
                 builder: (context, snapshot) {
-                  final count = snapshot.data?.docs.length ?? 0;
+                  final count =
+                      snapshot.data?.docs
+                          .where((doc) => doc.data()['isDeleted'] != true)
+                          .length ??
+                      0;
                   return Text(
                     count.toString(),
                     style: TextStyle(
@@ -362,7 +369,7 @@ class _AdminRoleRequestsScreenState
                   const Spacer(),
                   if (status == 'pending') ...[
                     OutlinedButton(
-                      onPressed: () => _rejectRequest(context, userId),
+                      onPressed: () => _rejectRequest(context, requestId),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
@@ -377,11 +384,8 @@ class _AdminRoleRequestsScreenState
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
-                      onPressed: () => _approveRequest(
-                        context,
-                        userId,
-                        requestedRole,
-                      ),
+                      onPressed: () =>
+                          _approveRequest(context, requestId, requestedRole),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2E7D32),
                         padding: const EdgeInsets.symmetric(
@@ -468,7 +472,7 @@ class _AdminRoleRequestsScreenState
 
   void _approveRequest(
     BuildContext context,
-    String userId,
+    String requestId,
     String requestedRole,
   ) {
     String? notes;
@@ -515,8 +519,7 @@ class _AdminRoleRequestsScreenState
                   Navigator.pop(context);
                   await _processRoleRequest(
                     context: context,
-                    userId: userId,
-                    newRole: requestedRole,
+                    requestId: requestId,
                     isApproved: true,
                     notes: notes,
                   );
@@ -533,7 +536,7 @@ class _AdminRoleRequestsScreenState
     );
   }
 
-  void _rejectRequest(BuildContext context, String userId) {
+  void _rejectRequest(BuildContext context, String requestId) {
     String? reason;
 
     showDialog(
@@ -586,8 +589,7 @@ class _AdminRoleRequestsScreenState
                   Navigator.pop(context);
                   await _processRoleRequest(
                     context: context,
-                    userId: userId,
-                    newRole: null,
+                    requestId: requestId,
                     isApproved: false,
                     notes: reason,
                   );
@@ -610,30 +612,23 @@ class _AdminRoleRequestsScreenState
   /// duplication of the same logic across screens).
   Future<void> _processRoleRequest({
     required BuildContext context,
-    required String userId,
-    required String? newRole,
+    required String requestId,
     required bool isApproved,
     String? notes,
   }) async {
     setState(() => _isLoading = true);
 
-    final adminId = ref.read(authProvider).user?.uid ?? '';
     final messenger = ScaffoldMessenger.of(context);
 
     try {
-      if (isApproved && newRole != null) {
-        await ref.read(authProvider.notifier).approveRoleChange(
-              userId: userId,
-              newRole: newRole,
-              adminId: adminId,
-              notes: notes,
-            );
+      if (isApproved) {
+        await ref
+            .read(authProvider.notifier)
+            .approveRoleChange(requestId: requestId, notes: notes);
       } else {
-        await ref.read(authProvider.notifier).rejectRoleChange(
-              userId: userId,
-              adminId: adminId,
-              reason: notes,
-            );
+        await ref
+            .read(authProvider.notifier)
+            .rejectRoleChange(requestId: requestId, reason: notes);
       }
 
       if (!mounted) return;

@@ -82,7 +82,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                 FutureBuilder<int>(
                   future: _getTotalBugBucksAwarded(),
                   builder: (context, snapshot) => _buildMetricCard(
-                    title: 'Bug Bucks Awarded',
+                    title: 'Referral Bug Bucks Awarded',
                     value: snapshot.data?.toString() ?? '0',
                     icon: Icons.attach_money,
                     color: const Color(0xFF2E7D32),
@@ -130,8 +130,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                         return _buildEmptyState(
                           icon: Icons.error_outline,
                           title: 'Couldn\'t load data',
-                          subtitle:
-                              'Pull to refresh or check your connection.',
+                          subtitle: 'Pull to refresh or check your connection.',
                         );
                       }
                       final referrers = snapshot.data ?? [];
@@ -147,9 +146,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
                         children: List.generate(referrers.length, (i) {
                           final referrer = referrers[i];
                           return Padding(
-                            padding: EdgeInsets.only(
-                              top: i == 0 ? 0 : 12,
-                            ),
+                            padding: EdgeInsets.only(top: i == 0 ? 0 : 12),
                             child: _buildReferrerRow(referrer, i + 1),
                           );
                         }),
@@ -292,9 +289,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
           height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: isSelected
-                ? const Color(0xFF2E7D32)
-                : Colors.grey[200],
+            color: isSelected ? const Color(0xFF2E7D32) : Colors.grey[200],
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
@@ -447,10 +442,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
               const SizedBox(height: 2),
               Text(
                 '$count referral${count == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF7F8C8D),
-                ),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF7F8C8D)),
               ),
             ],
           ),
@@ -489,11 +481,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
             color: color.withOpacity(0.12),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(
-            _getActivityIcon(type),
-            color: color,
-            size: 22,
-          ),
+          child: Icon(_getActivityIcon(type), color: color, size: 22),
         ),
         const SizedBox(width: 14),
         Expanded(
@@ -514,10 +502,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
               const SizedBox(height: 4),
               Text(
                 activity['time']?.toString() ?? '',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF7F8C8D),
-                ),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF7F8C8D)),
               ),
             ],
           ),
@@ -544,8 +529,10 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
 
   Future<int> _getTotalReferrals() async {
     try {
-      final snapshot = await _firestore.collection('referrals').count().get();
-      return snapshot.count ?? 0;
+      final snapshot = await _firestore.collection('referrals').get();
+      return snapshot.docs
+          .where((doc) => doc.data()['isDeleted'] != true)
+          .length;
     } catch (e) {
       print('Error getting total referrals: $e');
       return 0;
@@ -557,9 +544,10 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
       final snapshot = await _firestore
           .collection('referrals')
           .where('status', isEqualTo: 'converted')
-          .count()
           .get();
-      return snapshot.count ?? 0;
+      return snapshot.docs
+          .where((doc) => doc.data()['isDeleted'] != true)
+          .length;
     } catch (e) {
       print('Error getting converted referrals: $e');
       return 0;
@@ -572,6 +560,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
       int total = 0;
       for (var doc in snapshot.docs) {
         final data = doc.data();
+        if (data['isDeleted'] == true) continue;
         final bugBucks = data['bugBucksAwarded'];
         if (bugBucks != null) {
           // Convert num to int
@@ -591,6 +580,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
       double total = 0;
       for (var doc in snapshot.docs) {
         final data = doc.data();
+        if (data['isDeleted'] == true) continue;
         final cashBonus = data['cashBonusAwarded'];
         if (cashBonus != null) {
           // Convert num to double
@@ -611,14 +601,18 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
 
       for (var userDoc in snapshot.docs) {
         final userData = userDoc.data();
+        if (userData['isDeleted'] == true) continue;
         final referrals = await _firestore
             .collection('referrals')
             .where('customerId', isEqualTo: userDoc.id)
             .get();
 
-        if (referrals.docs.isNotEmpty) {
+        final activeReferrals = referrals.docs
+            .where((doc) => doc.data()['isDeleted'] != true)
+            .toList();
+        if (activeReferrals.isNotEmpty) {
           int totalBugBucks = 0;
-          for (var referralDoc in referrals.docs) {
+          for (var referralDoc in activeReferrals) {
             final bugBucks = referralDoc.data()['bugBucksAwarded'];
             if (bugBucks != null) {
               totalBugBucks += (bugBucks as num).toInt();
@@ -635,7 +629,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
 
           referrers.add({
             'name': userName,
-            'count': referrals.docs.length,
+            'count': activeReferrals.length,
             'bugBucks': totalBugBucks,
           });
         }
@@ -665,19 +659,20 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
       final referrals = await _firestore
           .collection('referrals')
           .orderBy('createdAt', descending: true)
-          .limit(5)
+          .limit(15)
           .get();
 
       final tasks = await _firestore
           .collection('employee_tasks')
           .orderBy('createdAt', descending: true)
-          .limit(5)
+          .limit(15)
           .get();
 
       List<Map<String, dynamic>> activities = [];
 
       for (var doc in referrals.docs) {
         final data = doc.data();
+        if (data['isDeleted'] == true) continue;
         final timestamp = data['createdAt'] as Timestamp?;
         activities.add({
           'type': 'referral',
@@ -691,6 +686,7 @@ class _AdminAnalyticsScreenState extends ConsumerState<AdminAnalyticsScreen> {
 
       for (var doc in tasks.docs) {
         final data = doc.data();
+        if (data['isDeleted'] == true) continue;
         final timestamp = data['createdAt'] as Timestamp?;
         activities.add({
           'type': 'task',

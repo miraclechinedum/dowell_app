@@ -79,10 +79,7 @@ class EmployeeDashboardScreen extends ConsumerWidget {
                             gradient: const LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [
-                                Color(0xFF388E3C),
-                                Color(0xFF1B5E20),
-                              ],
+                              colors: [Color(0xFF388E3C), Color(0xFF1B5E20)],
                             ),
                             borderRadius: BorderRadius.circular(32),
                             boxShadow: [
@@ -167,14 +164,12 @@ class EmployeeDashboardScreen extends ConsumerWidget {
               // Cash Bonus Balance — hero green-gradient card.
               statsAsync.when(
                 data: (stats) => _buildCashBalanceCard(context, stats),
-                loading: () => _buildCashBalanceCard(context, const {
-                  'cashBalance': 0.0,
-                }),
+                loading: () =>
+                    _buildCashBalanceCard(context, const {'cashBalance': 0.0}),
                 // Provider is resilient and won't normally throw; if it ever
                 // does, render the hero with zeros instead of an empty card.
-                error: (_, _) => _buildCashBalanceCard(context, const {
-                  'cashBalance': 0.0,
-                }),
+                error: (_, _) =>
+                    _buildCashBalanceCard(context, const {'cashBalance': 0.0}),
               ),
 
               const SizedBox(height: 20),
@@ -499,7 +494,13 @@ class EmployeeDashboardScreen extends ConsumerWidget {
           );
         }
 
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+        final activeTasks =
+            snapshot.data?.docs.where((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return data['isDeleted'] != true;
+            }).toList() ??
+            const <QueryDocumentSnapshot>[];
+        if (activeTasks.isEmpty) {
           return AppCard(
             child: const Column(
               children: [
@@ -520,7 +521,7 @@ class EmployeeDashboardScreen extends ConsumerWidget {
           );
         }
 
-        final tasks = snapshot.data!.docs;
+        final tasks = activeTasks;
         final recentTasks = tasks.take(3).toList(); // Show only 3 most recent
 
         return Column(
