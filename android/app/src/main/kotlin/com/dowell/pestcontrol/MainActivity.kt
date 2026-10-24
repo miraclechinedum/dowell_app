@@ -1,4 +1,4 @@
-package com.example.dowell_app
+package com.dowell.pestcontrol
 
 import io.flutter.embedding.android.FlutterActivity
 

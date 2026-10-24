@@ -1,34 +1,57 @@
 {
   "project_info": {
-    "project_number": "12126775970",
-    "project_id": "dowell-pest-control",
-    "storage_bucket": "dowell-pest-control.firebasestorage.app"
+    "project_number": "62834284925",
+    "project_id": "dowell-pest-control-prod",
+    "storage_bucket": "dowell-pest-control-prod.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:12126775970:android:e00994e0d9e2d9e358c5fb",
+        "mobilesdk_app_id": "1:62834284925:android:31d2499ecd941b9cff9414",
         "android_client_info": {
-          "package_name": "com.example.dowell_app"
+          "package_name": "com.dowell.pestcontrol"
         }
       },
       "oauth_client": [
         {
-          "client_id": "12126775970-8g4117dmjbj0ji48gkiqld3r7g6kddmp.apps.googleusercontent.com",
+          "client_id": "62834284925-81rgeuko22k8kup66m4553h4emmp49r4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.dowell.pestcontrol",
+            "certificate_hash": "25d5648a62ba86a8235b6698bdd9b6b5f3093ba5"
+          }
+        },
+        {
+          "client_id": "62834284925-v9pjg45li1ruo0arqqhd99j4p1je8u5v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.dowell.pestcontrol",
+            "certificate_hash": "73e5b32280e810dc7f1e252648d4391e2f6356b2"
+          }
+        },
+        {
+          "client_id": "62834284925-an12l9grba0ba676uml8vltdj19lcot9.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyARKOdYRfsvDEpphn5Yo_R-cLEG74kxsYg"
+          "current_key": "AIzaSyBpMEI1v2avsd6554jiTstiYc-107mkoHU"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "12126775970-8g4117dmjbj0ji48gkiqld3r7g6kddmp.apps.googleusercontent.com",
+              "client_id": "62834284925-an12l9grba0ba676uml8vltdj19lcot9.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "62834284925-hueumevq91lomjj8v4phk18rbimcbtoe.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.dowell.dowellapp"
+              }
             }
           ]
         }

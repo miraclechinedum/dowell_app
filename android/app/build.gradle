@@ -37,7 +37,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.dowell_app"
+    namespace = "com.dowell.pestcontrol"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -51,12 +51,7 @@ android {
     }
 
     signingConfigs {
-        debug {
-            storeFile file('debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-        }
+        // `debug` is the Android Gradle Plugin default (~/.android/debug.keystore).
         release {
             keyAlias keystoreProperties['keyAlias']
             keyPassword keystoreProperties['keyPassword']
@@ -67,7 +62,7 @@ android {
 
     defaultConfig {
        
-        applicationId = "com.example.dowell_app"
+        applicationId = "com.dowell.pestcontrol"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInteger()
