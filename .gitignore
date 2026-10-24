@@ -46,3 +46,73 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ─── Firebase migration: sensitive data (never commit) ──────────────────────
+# Keep exports, credentials, and backups outside the repository entirely. These
+# rules are a safety net, not a storage location.
+
+# Firebase Authentication exports (contain password hashes and salts) and
+# password-hash configuration. `users.json` is the filename in Firebase's
+# documented `firebase auth:export users.json` command.
+users.json
+*auth-export*
+*auth_export*
+*users-export*
+*users_export*
+*hash-config*
+*hash_config*
+*password-hash*
+*password_hash*
+
+# Customer-data and Firestore exports.
+*.csv
+*.tsv
+*.xlsx
+*.ndjson
+*.jsonl
+*customer-export*
+*customer_export*
+*firestore-export*
+*firestore_export*
+*.overall_export_metadata
+*.export_metadata
+**/all_namespaces/
+
+# Android signing material, wherever it is placed. The expected locations are
+# android/key.properties and android/app/dowell-release-key.jks.
+key.properties
+*.jks
+*.keystore
+
+# Service-account and cloud credentials.
+*-firebase-adminsdk-*.json
+*service-account*.json
+*service_account*.json
+*serviceAccount*.json
+*credentials*.json
+application_default_credentials.json
+*.p8
+*.p12
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# Migration backups and working directories.
+/migration/
+/migration-data/
+/migration_data/
+/exports/
+/backups/
+*.bak
+*.backup
+*-backup.json
+*_backup.json
+
+# Temporary sensitive files.
+/.secrets/
+/secrets/
+/tmp/
+*.secret
+*.sensitive
