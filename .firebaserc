@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "dowell-pest-control"
+    "prod": "dowell-pest-control-prod",
+    "legacy-readonly": "dowell-pest-control"
   },
   "targets": {},
   "etags": {}
