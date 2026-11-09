@@ -1,15 +1,18 @@
 import {createHash} from "node:crypto";
-import {initializeApp} from "firebase-admin/app";
+import {applicationDefault, initializeApp} from "firebase-admin/app";
 import {FieldValue, getFirestore} from "firebase-admin/firestore";
-
-initializeApp();
+import {assertInitializedProject, resolveLegacyTarget} from "./legacy-target.js";
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
 async function main(): Promise<void> {
-  const apply = process.argv.includes("--apply");
+  // Target and arguments are validated before Firebase is initialized.
+  const run = resolveLegacyTarget(process.argv.slice(2), process.env);
+  const app = initializeApp({credential: applicationDefault(), projectId: run.project});
+  assertInitializedProject(app.options.projectId, run.project);
+  const apply = run.apply;
   const counts = {scanned: 0, unchanged: 0, wouldCreate: 0, ambiguous: 0, errors: 0};
   const db = getFirestore();
   const referrals = await db.collection("referrals").get();

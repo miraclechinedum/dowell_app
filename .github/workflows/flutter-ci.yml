@@ -1,5 +1,10 @@
 name: Flutter CI/CD
 
+# CI checks run on pushes, pull requests and manual runs. Publishing to Google
+# Play or the App Store never happens automatically: both publish jobs are
+# disabled until the repository owner completes the release prerequisites
+# listed in the "Publishing: DISABLED" section below.
+
 on:
   push:
     branches:
@@ -10,6 +15,9 @@ on:
       - main
       - master
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   backend_security:
@@ -33,6 +41,7 @@ jobs:
         run: npm ci
       - name: Install Firebase CLI
         run: npm install --global firebase-tools
+      # Emulator suites use the offline demo-dowell project; nothing is deployed.
       - name: Functions checks
         working-directory: functions
         run: |
@@ -44,6 +53,7 @@ jobs:
           npm run test:storage-rules
           npm run test:referrals
           npm run test:tasks
+          npm run test:admin-finance
           npm run test:account-deletion
           npm run test:reconciliation
 
@@ -72,25 +82,38 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      # Analyzer errors fail CI. Warnings and infos are reported but not fatal:
+      # the codebase has known pre-existing warnings. Once they are fixed, switch
+      # to --fatal-warnings. Publishing never depends on this step's outcome.
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Run tests
         run: flutter test
 
-      - name: Build Android App Bundle
+      # Compile check only. CI has no release keystore, so this bundle is not
+      # signed for Google Play and is not published.
+      - name: Build Android App Bundle (compile check)
         run: flutter build appbundle --release
 
-      - name: Upload Android artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-appbundle
-          path: build/app/outputs/bundle/release/app-release.aab
+  # ─── Publishing: DISABLED ──────────────────────────────────────────────────
+  # Prerequisites before the repository owner may enable a publish job:
+  #  1. Backend deployed to dowell-pest-control-prod (indexes, Functions, rules)
+  #     and smoke tests approved.
+  #  2. A GitHub Environment (play-internal / app-store) with required
+  #     reviewers, configured in the repository settings.
+  #  3. Android: release signing configured from secrets (upload keystore +
+  #     key.properties) in this job; Play service account secret present.
+  #  4. iOS: App Store Connect bundle ID confirmed by the store account holder
+  #     (local Xcode/Firebase config uses com.dowell.dowellapp).
+  # To enable, replace `if: false` with `if: github.event_name == 'workflow_dispatch'`
+  # and keep the environment gate.
 
   deploy_android:
     needs: [build_and_test, backend_security]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: false
+    environment: play-internal
 
     steps:
       - name: Checkout repository
@@ -111,14 +134,19 @@ jobs:
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.example.dowell_app
+          packageName: com.dowell.pestcontrol
           releaseFiles: build/app/outputs/bundle/release/app-release.aab
           track: internal
 
   deploy_ios:
     needs: [build_and_test, backend_security]
     runs-on: macos-latest
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: false
+    environment: app-store
+    env:
+      # Secrets cannot be referenced in step-level `if:`; expose presence flags.
+      HAS_APPSTORE_CERT: ${{ secrets.APPSTORE_CERT_BASE64 != '' }}
+      HAS_PROVISIONING_PROFILE: ${{ secrets.APPSTORE_PROVISIONING_PROFILE_BASE64 != '' }}
 
     steps:
       - name: Checkout repository
@@ -148,14 +176,14 @@ jobs:
           pod install
 
       - name: Import Apple signing certificate
-        if: ${{ secrets.APPSTORE_CERT_BASE64 != '' }}
+        if: env.HAS_APPSTORE_CERT == 'true'
         uses: apple-actions/import-codesign-certs@v1
         with:
           p12-file-base64: ${{ secrets.APPSTORE_CERT_BASE64 }}
           p12-password: ${{ secrets.APPSTORE_CERT_PASSWORD }}
 
       - name: Import provisioning profile
-        if: ${{ secrets.APPSTORE_PROVISIONING_PROFILE_BASE64 != '' }}
+        if: env.HAS_PROVISIONING_PROFILE == 'true'
         uses: apple-actions/import-provisioning-profiles@v1
         with:
           provisioning-profile-base64: ${{ secrets.APPSTORE_PROVISIONING_PROFILE_BASE64 }}

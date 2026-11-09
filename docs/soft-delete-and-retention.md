@@ -45,8 +45,9 @@ claimed admins to read evidence. The admin task history reads archived objects d
 by path through the authenticated Firebase Storage SDK.
 
 The Storage emulator is not authoritative for download-token invalidation. Before
-production rollout, run `verify-storage-token-revocation.ts` only against a throwaway or
-staging bucket using explicit `--bucket`, `--object`, and `--confirm-staging` arguments.
+production rollout, run `verify-storage-token-revocation.ts` only against a throwaway
+bucket that has been approved in `functions/scripts/storage-probe-guard.ts` (none is
+approved today), using `--bucket`, `--object` and an exact `--confirm-bucket`.
 Rollout fails if the captured old URL remains accessible. The script embeds no project,
 bucket, credential, object, token, or URL.
 

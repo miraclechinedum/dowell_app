@@ -1,38 +1,26 @@
-import {initializeApp} from "firebase-admin/app";
+import {applicationDefault, initializeApp} from "firebase-admin/app";
 import {getFirestore} from "firebase-admin/firestore";
-
-initializeApp();
+import {assertInitializedProject, resolveLegacyTarget} from "./legacy-target.js";
+import {profileDefaults} from "./profile-defaults.js";
 
 async function main(): Promise<void> {
-  const apply = process.argv.includes("--apply");
+  // Target and arguments are validated before Firebase is initialized.
+  const run = resolveLegacyTarget(process.argv.slice(2), process.env);
+  const app = initializeApp({credential: applicationDefault(), projectId: run.project});
+  assertInitializedProject(app.options.projectId, run.project);
+  const apply = run.apply;
   const counts = {scanned: 0, unchanged: 0, wouldUpdate: 0, ambiguous: 0, errors: 0};
   const users = await getFirestore().collection("users").get();
   for (const profile of users.docs) {
     counts.scanned++;
     try {
-      const data = profile.data();
-      const update: Record<string, unknown> = {};
-      const knownUnsafe = data.status === "pending" || data.status === "deactivated" ||
-        data.status === "blocked" || data.needsVerification === true || data.requestedRole != null;
-      if (data.status == null) {
-        if (knownUnsafe) {
-          counts.ambiguous++;
-          console.log(JSON.stringify({uid: profile.id, status: "manual-review", reason: "missing-status"}));
-          continue;
-        }
-        update.status = "active";
+      const defaults = profileDefaults(profile.data());
+      if (defaults.kind === "review") {
+        counts.ambiguous++;
+        console.log(JSON.stringify({uid: profile.id, status: "manual-review", reason: defaults.reason}));
+        continue;
       }
-      if (data.needsVerification == null) {
-        if (data.status === "pending" || data.requestedRole != null) {
-          update.needsVerification = true;
-        } else if (data.status === "active" || update.status === "active") {
-          update.needsVerification = false;
-        } else {
-          counts.ambiguous++;
-          console.log(JSON.stringify({uid: profile.id, status: "manual-review", reason: "missing-verification"}));
-          continue;
-        }
-      }
+      const update = defaults.update;
       if (Object.keys(update).length === 0) {
         counts.unchanged++;
       } else {

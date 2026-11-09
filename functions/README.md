@@ -2,36 +2,90 @@
 
 This directory contains trusted referral, employee-task, account-deletion, and role-management code. Nothing here is deployed by initialization or local tests.
 
-## Role-claim backfill
+## ⚠️ Legacy maintenance scripts (do not run without written approval)
 
-The callable functions require an existing `admin: true` Firebase Auth custom claim. Bootstrap only explicitly reviewed existing administrator UIDs from a trusted developer workstation authenticated with Application Default Credentials:
+`scripts/bootstrap-admin.ts`, `scripts/backfill-user-profiles.ts` and
+`scripts/backfill-referral-identities.ts` are **legacy** scripts written before
+the production migration. They write custom claims, profile fields or referral
+identity reservations when given `--apply`.
+
+They are now guarded by `scripts/legacy-target.ts`, which runs before Firebase is
+initialized:
+
+- `--project=<id>` is **required on every run** and must be an approved target.
+  The legacy project **`dowell-pest-control` is always refused** and must remain
+  unchanged. Unknown or retired projects are refused.
+- Writes need `--apply` **and** `--confirm-target=<id>` exactly matching `--project`.
+- If `GOOGLE_CLOUD_PROJECT`, `GCLOUD_PROJECT`, `GCP_PROJECT` or `FIREBASE_CONFIG`
+  name a different project, the script refuses. The initialized app's project is
+  re-checked before any read or write.
+
+The production migration is complete; account activation and admin access are
+owner decisions. **Do not run these scripts against production without separate
+written approval.** If a run is approved, review a dry run first. Placeholders are
+intentional; never copy a real project ID from older notes:
 
 ```sh
-cd functions
-npm run build
-GOOGLE_CLOUD_PROJECT=dowell-pest-control node lib/scripts/bootstrap-admin.js UID_1 UID_2
+# DRY RUN (read-only): prints proposed changes only
+node lib/scripts/<script>.js --project=<APPROVED_PROJECT_ID> [args]
+
+# WRITE: only after reviewing the dry run and receiving written approval
+node lib/scripts/<script>.js --project=<APPROVED_PROJECT_ID> --apply \
+  --confirm-target=<APPROVED_PROJECT_ID> [args]
 ```
 
-That command is a dry run. After reviewing its proposed canonical claims, add
-`--apply` to perform the changes. The script reads each explicit UID's Firestore
-role, refuses ambiguous roles, preserves unrelated claims, and clears conflicting
-privileged booleans.
+## ⚠️ Storage token probe (disabled)
 
-The profile-default migration is also dry-run-first:
+`scripts/verify-storage-token-revocation.ts` **removes the download token** from a
+Storage object. It is guarded by `scripts/storage-probe-guard.ts`, which validates
+arguments before Firebase is initialized:
 
-```sh
-GOOGLE_CLOUD_PROJECT=dowell-pest-control node lib/scripts/backfill-user-profiles.js
-# add --apply only after reviewing every update and manual-review row
-```
+- Buckets must be on `APPROVED_PROBE_BUCKETS` in that source file. The list is
+  **empty**, so the probe refuses every request. It cannot be extended from the
+  command line; approving a bucket needs a reviewed code change with a written
+  approval reference for that exact bucket and operation.
+- The legacy and production default buckets additionally need a separate
+  `protectedBucketApprovalReference`.
+- `--confirm-bucket=<bucket>` must match `--bucket` exactly. `--confirm-staging`
+  is no longer accepted.
 
-Before enforcing same-customer duplicate referral protection over historical
-data, review `lib/scripts/backfill-referral-identities.js` in dry-run mode. It
-reports conflicting legacy identities for manual review and writes only when
-`--apply` is supplied.
+## Migration tools (`scripts/migration/`)
 
-Do not place service-account JSON files or UIDs in this repository. Verify every UID in Firebase Auth and the existing `users/{uid}` admin profile before running the command. This script is intentionally never exposed as an HTTP or callable function.
+These tools have their own, stricter checks:
 
-Affected users must sign out/in or force-refresh their Firebase ID token before
-new claims appear. Before rollout, dry-run/review both tools, deploy Functions,
-apply reviewed claims/profile defaults, release the compatible Flutter client,
-and only then deploy the tightened rules in a coordinated maintenance window.
+- Write-capable tools (`import-auth-users`, `migrate-firestore`, `migrate-storage`,
+  `apply-claims`, `provision-client-admin`) accept only the production destination
+  as `--target`, refuse the legacy project, and run as **dry runs** unless given
+  **all** of: `--apply`, an exact matching `--confirm-target`, and an approved
+  private decisions file. Provisioning the client admin also requires
+  `clientAdmin.approved`. These checks run before any Firebase connection
+  (covered by `test/unit/migration-guards.test.ts`).
+- The legacy project is only ever read (`snapshot-source`, and the source side of
+  `import-auth-users` and `validate-target`).
+- The migration was executed on 2026-10-22. Its decisions file is set to
+  `approved: false`, with a read-only archive of the executed decisions.
+
+### Migration lock
+
+Every write-capable migration tool also checks a fixed lock file,
+`~/DowellMigration/migration-lock.json`, **before** any Firebase connection,
+whichever `--decisions` file is passed. An archived, approved decisions file
+therefore cannot bypass it. The check fails closed: a missing, unreadable,
+malformed, symlinked or group/world-writable lock file refuses `--apply`.
+Dry runs, `plan-report` and `validate-target` are unaffected. There is no
+command-line override.
+
+Manual unlock procedure (only for a separately approved future migration):
+
+1. Obtain written approval that names the migration and its scope.
+2. Edit the lock file by hand (owner-only, mode `600`) to
+   `{"locked": false, "unlockApproval": {"reference": "<approval reference>",
+   "approvedBy": "<name or role>", "approvedOn": "<YYYY-MM-DD>"}}`.
+   All three fields are required.
+3. Run the tools (dry run first), then restore `"locked": true` immediately afterwards.
+
+## General
+
+Do not place service-account JSON files, exports or UIDs in this repository
+(`.gitignore` blocks common names). Users must sign out and in, or force-refresh
+their ID token, before changed custom claims take effect.

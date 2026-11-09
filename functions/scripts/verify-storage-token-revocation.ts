@@ -1,21 +1,13 @@
 import {applicationDefault, initializeApp} from "firebase-admin/app";
 import {getStorage} from "firebase-admin/storage";
+import {probeReport, redactCredentials, validateProbeArgs} from "./storage-probe-guard.js";
 
-function argument(name: string): string | undefined {
-  const index = process.argv.indexOf(`--${name}`);
-  return index >= 0 ? process.argv[index + 1] : undefined;
-}
-
+// Removes the download token of one Storage object and checks that a captured
+// URL stops working. Only buckets approved in storage-probe-guard.ts (currently
+// none) can be used; arguments are validated before Firebase is initialized.
 async function main() {
-  const bucketName = argument("bucket");
-  const objectPath = argument("object");
-  const suppliedUrl = argument("old-url");
-  if (!bucketName || !objectPath) {
-    throw new Error("Usage: --bucket BUCKET --object PATH [--old-url URL] --confirm-staging");
-  }
-  if (!process.argv.includes("--confirm-staging")) {
-    throw new Error("Refusing to mutate metadata without --confirm-staging.");
-  }
+  const {bucket: bucketName, object: objectPath, oldUrl: suppliedUrl} =
+    validateProbeArgs(process.argv.slice(2));
 
   initializeApp({credential: applicationDefault(), storageBucket: bucketName});
   const file = getStorage().bucket(bucketName).file(objectPath);
@@ -33,19 +25,17 @@ async function main() {
   await file.setMetadata({metadata: {firebaseStorageDownloadTokens: null}});
   const [after] = await file.getMetadata();
   const response = await fetch(oldUrl, {redirect: "manual"});
-  const passed = response.status === 401 || response.status === 403 || response.status === 404;
-  console.log({
-    bucket: bucketName,
-    object: objectPath,
-    oldToken,
-    tokenMetadataAfter: after.metadata?.firebaseStorageDownloadTokens ?? null,
-    oldUrlHttpStatus: response.status,
-    result: passed ? "PASS" : "FAIL",
+  // Never log tokens or the token-bearing URL: identifiers, presence and outcome only.
+  const report = probeReport({
+    bucket: bucketName, object: objectPath, tokenBefore: oldToken,
+    tokenAfter: after.metadata?.firebaseStorageDownloadTokens, status: response.status,
   });
-  if (!passed) process.exitCode = 1;
+  console.log(report);
+  if (report.result !== "PASS") process.exitCode = 1;
 }
 
 main().catch((error) => {
-  console.error("Staging token-revocation probe failed", error);
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("Storage token-revocation probe failed:", redactCredentials(message));
   process.exitCode = 1;
 });

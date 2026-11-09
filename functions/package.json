@@ -8,12 +8,14 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint --ext .ts src scripts",
-    "test": "npm run build && node --test lib/test/unit/role-policy.test.js lib/test/unit/role-claims.test.js lib/test/unit/admin-authorization.test.js",
+    "test": "npm run build && node --test lib/test/unit/role-policy.test.js lib/test/unit/role-claims.test.js lib/test/unit/admin-authorization.test.js lib/test/unit/migration-plan.test.js lib/test/unit/migration-guards.test.js lib/test/unit/legacy-target.test.js lib/test/unit/storage-probe-guard.test.js",
+    "migration:snapshot": "npm run build && node lib/scripts/migration/snapshot-source.js && node lib/scripts/migration/plan-report.js",
     "test:rules": "firebase emulators:exec --project demo-dowell --only firestore 'mocha --require ts-node/register test/firestore.rules.test.ts'",
     "test:storage-rules": "firebase emulators:exec --project demo-dowell --only storage 'mocha --require ts-node/register test/storage.rules.test.ts'",
     "test:referrals": "npm run build && firebase emulators:exec --project demo-dowell --only firestore 'node --test lib/test/referrals.integration.test.js'",
     "test:tasks": "npm run build && firebase emulators:exec --project demo-dowell --only firestore 'node --test lib/test/employee-tasks.integration.test.js'",
     "test:account-deletion": "npm run build && firebase emulators:exec --project demo-dowell --only firestore 'node --test lib/test/account-deletion.integration.test.js'"
+    ,"test:admin-finance": "npm run build && firebase emulators:exec --project demo-dowell --only firestore 'node --test lib/test/admin-finance.integration.test.js'"
     ,"test:reconciliation": "npm run build && firebase emulators:exec --project demo-dowell --only firestore 'node --test lib/test/account-reconciliation.integration.test.js'"
   },
   "dependencies": {

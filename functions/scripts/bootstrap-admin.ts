@@ -1,14 +1,16 @@
-import {initializeApp} from "firebase-admin/app";
+import {applicationDefault, initializeApp} from "firebase-admin/app";
 import {getAuth} from "firebase-admin/auth";
 import {getFirestore} from "firebase-admin/firestore";
 import {canonicalRoleClaims, isCanonicalRole} from "../src/role-claims.js";
-
-initializeApp();
+import {assertInitializedProject, resolveLegacyTarget} from "./legacy-target.js";
 
 async function main(): Promise<void> {
-  const apply = process.argv.includes("--apply");
-  const uids = process.argv.slice(2).filter((arg) => !arg.startsWith("--"))
-    .map((uid) => uid.trim()).filter(Boolean);
+  // Target and arguments are validated before Firebase is initialized.
+  const run = resolveLegacyTarget(process.argv.slice(2), process.env, {allowPositionals: true});
+  const app = initializeApp({credential: applicationDefault(), projectId: run.project});
+  assertInitializedProject(app.options.projectId, run.project);
+  const apply = run.apply;
+  const uids = run.positionals.map((uid) => uid.trim()).filter(Boolean);
   if (uids.length === 0) {
     throw new Error("Supply one or more explicit Firebase Auth UIDs.");
   }
