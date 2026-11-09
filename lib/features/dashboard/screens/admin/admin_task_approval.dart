@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import '../../../../core/providers/auth_provider.dart';
+import '../../../../core/services/task_bonus_policy.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/status_badge.dart';
 
@@ -545,13 +546,36 @@ class _AdminTaskApprovalScreenState
   }
 
   void _showApproveTaskDialog(BuildContext context, String taskId) {
-    double? bonusAmount;
     String? notes;
+    // The bonus is the configured standard amount; admins cannot override it.
+    final bonusFuture = _firestore
+        .collection('app_settings')
+        .doc('reward_settings')
+        .get()
+        .then((doc) => configuredTaskBonus(doc.data()));
 
     showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
+      builder: (context) => FutureBuilder<double?>(
+        future: bonusFuture,
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState != ConnectionState.done;
+          final bonus = snapshot.data;
+          final Widget bonusInfo;
+          if (loading) {
+            bonusInfo = const LinearProgressIndicator();
+          } else if (snapshot.hasError || bonus == null) {
+            bonusInfo = const Text(
+              'The task bonus is not configured correctly. '
+              'Set a valid Employee Cash Bonus in Admin Settings before approving.',
+              style: TextStyle(color: Colors.red),
+            );
+          } else {
+            bonusInfo = Text(
+              '\$${bonus.toStringAsFixed(2)} (standard bonus from Admin Settings)',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            );
+          }
           return AlertDialog(
             title: const Text('Approve Task'),
             content: SingleChildScrollView(
@@ -559,22 +583,14 @@ class _AdminTaskApprovalScreenState
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Bonus Amount (\$):'),
-                  TextField(
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) =>
-                        setState(() => bonusAmount = double.tryParse(value)),
-                    decoration: const InputDecoration(
-                      hintText: 'Enter bonus amount...',
-                      border: OutlineInputBorder(),
-                      prefixText: '\$',
-                    ),
-                  ),
+                  const Text('Bonus Amount:'),
+                  const SizedBox(height: 4),
+                  bonusInfo,
                   const SizedBox(height: 16),
                   const Text('Admin Notes:'),
                   TextField(
                     maxLines: 3,
-                    onChanged: (value) => setState(() => notes = value),
+                    onChanged: (value) => notes = value,
                     decoration: const InputDecoration(
                       hintText: 'Add notes...',
                       border: OutlineInputBorder(),
@@ -592,26 +608,18 @@ class _AdminTaskApprovalScreenState
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF2E7D32),
                 ),
-                onPressed: () async {
-                  if (bonusAmount == null || bonusAmount! <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Please enter a valid bonus amount'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                    return;
-                  }
-
-                  Navigator.pop(context);
-                  await _updateTaskStatus(
-                    context,
-                    taskId,
-                    'approved',
-                    notes ?? '',
-                    bonusAmount: bonusAmount,
-                  );
-                },
+                onPressed: bonus == null
+                    ? null
+                    : () async {
+                        Navigator.pop(context);
+                        await _updateTaskStatus(
+                          context,
+                          taskId,
+                          'approved',
+                          notes ?? '',
+                          expectedBonusAmount: bonus,
+                        );
+                      },
                 child: const Text(
                   'Approve & Award Bonus',
                   style: TextStyle(color: Colors.white),
@@ -629,62 +637,38 @@ class _AdminTaskApprovalScreenState
     String taskId,
     String status,
     String notes, {
-    double? bonusAmount,
+    double? expectedBonusAmount,
   }) async {
     try {
       setState(() => _isLoading = true);
 
-      final adminId = ref.read(authProvider).user?.uid ?? '';
-      final updateData = {
-        'status': status,
-        'updatedAt': FieldValue.serverTimestamp(),
-        'approvedBy': adminId,
-        'approvedAt': FieldValue.serverTimestamp(),
-        'adminNotes': notes,
-      };
-
-      if (status == 'approved' && bonusAmount != null) {
-        updateData['cashBonusAwarded'] = bonusAmount;
-        updateData['paidOut'] = false;
-
-        // Get task data to find employee
-        final taskDoc = await _firestore
-            .collection('employee_tasks')
-            .doc(taskId)
-            .get();
-        final taskData = taskDoc.data();
-        final employeeId = taskData?['employeeId'];
-
-        if (employeeId != null) {
-          // Update employee's cash bonus balance
-          await _firestore.collection('users').doc(employeeId).update({
-            'cashBonusBalance': FieldValue.increment(bonusAmount),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-
-          // Create cash bonus transaction
-          await _firestore.collection('cash_bonus_transactions').add({
-            'userId': employeeId,
-            'amount': bonusAmount,
-            'description': 'Task bonus: ${taskData?['taskType']}',
-            'taskId': taskId,
-            'status': 'pending',
-            'createdAt': FieldValue.serverTimestamp(),
-            'adminId': adminId,
-          });
-        }
-      }
-
-      await _firestore
-          .collection('employee_tasks')
-          .doc(taskId)
-          .update(updateData);
+      // The review, bonus credit, ledger entry and audit log are applied in
+      // one server transaction; repeating an identical review is a no-op.
+      await FirebaseFunctions.instance.httpsCallable('reviewEmployeeTask').call({
+        'taskId': taskId,
+        'decision': status == 'approved' ? 'approve' : 'reject',
+        'notes': notes,
+        // The server applies the configured bonus and refuses if it no longer
+        // matches the amount shown to the admin.
+        if (status == 'approved') 'expectedBonusAmount': expectedBonusAmount,
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Task $status successfully'),
           backgroundColor: status == 'rejected' ? Colors.red : Colors.green,
         ),
+      );
+    } on FirebaseFunctionsException catch (e) {
+      final details = e.details;
+      final reason = details is Map ? details['reason'] : null;
+      final message = reason == 'bonus-changed'
+          ? 'The standard bonus changed in Admin Settings. Reopen the task to approve it.'
+          : reason == 'bonus-configuration-invalid'
+              ? 'The task bonus is not configured correctly in Admin Settings.'
+              : (e.message ?? 'The task could not be reviewed.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

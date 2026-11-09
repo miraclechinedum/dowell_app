@@ -1,6 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/providers/auth_provider.dart';
 import '../../../../core/widgets/app_card.dart';
@@ -824,6 +827,12 @@ class _AdminUserManagementScreenState
     TextEditingController cashBonusController = TextEditingController();
     TextEditingController reasonController = TextEditingController();
     String adjustmentType = 'add'; // 'add' or 'subtract'
+    // One ID per dialog: a repeated submission of this adjustment is applied once.
+    final random = Random.secure();
+    final requestId = List.generate(
+      24,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
 
     showDialog(
       context: context,
@@ -983,103 +992,18 @@ class _AdminUserManagementScreenState
                       }
                     }
 
-                    // Get current balances
-                    final userDoc = await FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(userId)
-                        .get();
-                    final currentBugBucks = userDoc['bugBucks'] ?? 0;
-                    final currentCashBonus =
-                        (userDoc['cashBonusBalance'] as num?)?.toDouble() ??
-                        0.0;
-
-                    // Calculate new balances
-                    final newBugBucks = currentBugBucks + bugBucksAdjustment;
-                    final newCashBonus = currentCashBonus + cashBonusAdjustment;
-
-                    // Validate negative balances
-                    if (newBugBucks < 0 || newCashBonus < 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Cannot set balance below zero'),
-                          backgroundColor: Colors.orange,
-                        ),
-                      );
-                      return;
-                    }
-
-                    await FirebaseFirestore.instance.runTransaction((
-                      transaction,
-                    ) async {
-                      // Update user balances
-                      transaction.update(
-                        FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(userId),
-                        {
-                          'bugBucks': newBugBucks,
-                          'cashBonusBalance': newCashBonus,
-                          'updatedAt': FieldValue.serverTimestamp(),
-                          'lastRewardAdjustment': FieldValue.serverTimestamp(),
-                        },
-                      );
-
-                      // Create bug bucks transaction record
-                      if (bugBucksAdjustment != 0) {
-                        final transactionId = FirebaseFirestore.instance
-                            .collection('bugbucks_transactions')
-                            .doc()
-                            .id;
-
-                        transaction.set(
-                          FirebaseFirestore.instance
-                              .collection('bugbucks_transactions')
-                              .doc(transactionId),
-                          {
-                            'userId': userId,
-                            'userName': userName,
-                            'type': 'admin_adjustment',
-                            'amount': bugBucksAdjustment.abs(),
-                            'balanceBefore': currentBugBucks,
-                            'balanceAfter': newBugBucks,
-                            'description':
-                                'Admin adjustment: $reason (${adjustmentType == 'add' ? 'Added' : 'Deducted'}: ${bugBucksAdjustment.abs()} BB)',
-                            'referenceId':
-                                'ADMIN_${DateTime.now().millisecondsSinceEpoch}',
-                            'adminId': adminId,
-                            'adminEmail': adminEmail,
-                            'reason': reason,
-                            'adjustmentType': adjustmentType,
-                            'createdAt': FieldValue.serverTimestamp(),
-                          },
-                        );
-                      }
-
-                      // Create audit log
-                      transaction.set(
-                        FirebaseFirestore.instance
-                            .collection('audit_logs')
-                            .doc(),
-                        {
-                          'action': 'REWARD_ADJUSTMENT',
-                          'userId': userId,
-                          'userName': userName,
-                          'adminId': adminId,
-                          'adminEmail': adminEmail,
-                          'timestamp': FieldValue.serverTimestamp(),
-                          'details': {
-                            'bugBucksAdjustment': bugBucksAdjustment,
-                            'cashBonusAdjustment': cashBonusAdjustment,
-                            'previousBugBucks': currentBugBucks,
-                            'newBugBucks': newBugBucks,
-                            'previousCashBonus': currentCashBonus,
-                            'newCashBonus': newCashBonus,
-                            'reason': reason,
-                            'adjustmentType': adjustmentType,
-                          },
-                        },
-                      );
-                    });
+                    // Balances are read and updated in one server transaction
+                    // with ledger and audit entries; negative results are
+                    // refused there. The request ID makes retries no-ops.
+                    await FirebaseFunctions.instance
+                        .httpsCallable('adjustUserBalance')
+                        .call({
+                          'targetUid': userId,
+                          'requestId': requestId,
+                          'bugBucksDelta': bugBucksAdjustment,
+                          'cashBonusDelta': cashBonusAdjustment,
+                          'reason': reason,
+                        });
 
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(

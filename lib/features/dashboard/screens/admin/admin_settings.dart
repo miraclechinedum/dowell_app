@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/services/task_bonus_policy.dart';
 import '../../../../core/widgets/app_card.dart';
 
 class AdminSettingsScreen extends ConsumerStatefulWidget {
@@ -40,12 +41,9 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
           _initializeControllers();
         });
       } else {
-        // Create default reward settings
+        // Show suggested defaults, but never save them implicitly: the task
+        // bonus and reward amounts take effect only when an admin saves.
         _settings = _getDefaultSettings();
-        await _firestore
-            .collection('app_settings')
-            .doc('reward_settings')
-            .set(_settings);
         _initializeControllers();
       }
     } catch (e) {
@@ -116,8 +114,11 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen> {
       if (employeeTaskBugBucks == null || employeeTaskBugBucks < 0) {
         throw 'Employee Task Bug Bucks must be a positive number';
       }
-      if (employeeCashBonus == null || employeeCashBonus < 0) {
-        throw 'Employee Cash Bonus must be a positive number';
+      // Same rule the server applies when approving tasks.
+      if (configuredTaskBonus({'employee_cash_bonus': employeeCashBonus}) ==
+          null) {
+        throw 'Employee Cash Bonus must be greater than 0, at most '
+            '\$${maxTaskBonus.toStringAsFixed(0)}, in whole cents';
       }
 
       // Update settings

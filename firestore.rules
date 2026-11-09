@@ -51,6 +51,68 @@ service cloud.firestore {
         || request.resource.data.isDeleted == false);
     }
 
+    // Balances and review/payment state change only in trusted Functions
+    // (admin-finance.ts), inside one transaction with a ledger entry.
+    function doesNotChangeBalances() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'bugBucks', 'cashBonusBalance', 'walletBalance', 'cashBalance'
+      ]);
+    }
+
+    // Derived counters are maintained only by trusted Functions, in the same
+    // transaction as the task/referral change they count.
+    function doesNotChangeCounters() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'pendingTasks', 'totalTasks', 'approvedTasks', 'totalReferrals', 'convertedReferrals'
+      ]);
+    }
+
+    function createsNoCounters() {
+      return (!request.resource.data.keys().hasAny(['pendingTasks']) || request.resource.data.pendingTasks == 0)
+        && (!request.resource.data.keys().hasAny(['totalTasks']) || request.resource.data.totalTasks == 0)
+        && (!request.resource.data.keys().hasAny(['approvedTasks']) || request.resource.data.approvedTasks == 0)
+        && (!request.resource.data.keys().hasAny(['totalReferrals']) || request.resource.data.totalReferrals == 0)
+        && (!request.resource.data.keys().hasAny(['convertedReferrals']) || request.resource.data.convertedReferrals == 0);
+    }
+
+    function createsNoBalance() {
+      return (!request.resource.data.keys().hasAny(['bugBucks'])
+          || request.resource.data.bugBucks == 0)
+        && (!request.resource.data.keys().hasAny(['cashBonusBalance'])
+          || request.resource.data.cashBonusBalance == 0)
+        && !request.resource.data.keys().hasAny(['walletBalance', 'cashBalance']);
+    }
+
+    function doesNotChangeTaskReview() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'status', 'cashBonusAwarded', 'paidOut', 'isPaid', 'bonusCreditedToBalance',
+        'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'reviewedBy',
+        'reviewedAt', 'cashBonusTransactionId', 'settlementStatus', 'settledAt',
+        'settledBy', 'employeeId'
+      ]);
+    }
+
+    // Approved policy: numeric, finite, 0 < bonus <= 1000, whole cents. The
+    // cent check mirrors the server exactly: round(x * 100) / 100 == x.
+    function isValidTaskBonus(value) {
+      return value is number
+        && value > 0
+        && value <= 1000
+        && float(math.round(float(value) * 100.0)) / 100.0 == float(value);
+    }
+
+    // Owners may only mark their own notification read or dismissed.
+    function isNotificationReadUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'read', 'isRead', 'readAt', 'dismissed', 'dismissedAt'
+        ])
+        && (!request.resource.data.keys().hasAny(['read']) || request.resource.data.read is bool)
+        && (!request.resource.data.keys().hasAny(['isRead']) || request.resource.data.isRead is bool)
+        && (!request.resource.data.keys().hasAny(['dismissed']) || request.resource.data.dismissed is bool)
+        && (!request.resource.data.keys().hasAny(['readAt']) || request.resource.data.readAt is timestamp)
+        && (!request.resource.data.keys().hasAny(['dismissedAt']) || request.resource.data.dismissedAt is timestamp);
+    }
+
     function resourceIsActive() {
       return !resource.data.keys().hasAny(['isDeleted'])
         || resource.data.isDeleted == false;
@@ -118,10 +180,10 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
       allow delete: if false;
-      allow create: if (isAdmin() && hasNoDeletionMetadata())
+      allow create: if (isAdmin() && hasNoDeletionMetadata() && createsNoBalance() && createsNoCounters())
         || (isOwner(uid) && hasOnlyCustomerProfileDefaults());
       allow update: if (isAdmin() && resourceIsActive()
-          && doesNotChangeDeletionMetadata())
+          && doesNotChangeDeletionMetadata() && doesNotChangeBalances() && doesNotChangeCounters())
         || (isOwner(uid) && (isProfileOnlyUpdate() || isValidRoleRequestTransition()));
     }
 
@@ -140,39 +202,40 @@ service cloud.firestore {
 
     // ─── employee_tasks/{id} ────────────────────────────────────────────
     // The callable is the sole employee task creation path.
+    // Review (approve/reject) and bonus credit go through reviewEmployeeTask.
     match /employee_tasks/{id} {
       allow read: if (isOwner(resource.data.employeeId)
           && isActiveProfile(request.auth.uid)) || isAdmin();
       allow create: if isAdmin() && hasNoDeletionMetadata();
       allow update: if isAdmin() && resourceIsActive()
-        && doesNotChangeDeletionMetadata();
+        && doesNotChangeDeletionMetadata() && doesNotChangeTaskReview();
       allow delete: if false;
     }
 
     // ─── employee_cashouts/{id} ─────────────────────────────────────────
-    // Legacy financial records are backend/admin managed; owners can read only.
+    // Legacy financial records. The current app has no cashout workflow, so no
+    // client (admins included) may create or change them; only trusted
+    // backend code (account deletion soft-delete) writes here.
     match /employee_cashouts/{id} {
       allow read: if isOwner(resource.data.employeeId) || isAdmin();
-      allow create: if isAdmin() && hasNoDeletionMetadata();
-      allow update: if isAdmin() && resourceIsActive()
-        && doesNotChangeDeletionMetadata();
+      allow create, update: if false;
       allow delete: if false;
     }
 
     // ─── bugbucks_transactions/{id} ─────────────────────────────────────
-    // Reward ledger entries are immutable to owners; claimed admins manage them.
+    // Reward ledger entries are written only by trusted Functions.
     match /bugbucks_transactions/{id} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isAdmin() && hasNoDeletionMetadata();
+      allow create: if false;
       allow update: if false;
       allow delete: if false;
     }
 
     // ─── cash_bonus_transactions/{id} ───────────────────────────────────
-    // Written by admins when approving employee tasks. Owners can only read.
+    // Written only by trusted Functions (task review, adjustments, settlement).
     match /cash_bonus_transactions/{id} {
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isAdmin() && hasNoDeletionMetadata();
+      allow create: if false;
       allow update: if false;
       allow delete: if false;
     }
@@ -199,9 +262,9 @@ service cloud.firestore {
     match /notifications/{id} {
       allow read: if (isOwner(resource.data.userId)
           && isActiveProfile(request.auth.uid)) || isAdmin();
-      allow update: if (isOwner(resource.data.userId) || isAdmin())
-        && resourceIsActive()
-        && doesNotChangeDeletionMetadata();
+      allow update: if resourceIsActive() && doesNotChangeDeletionMetadata()
+        && request.resource.data.userId == resource.data.userId
+        && ((isOwner(resource.data.userId) && isNotificationReadUpdate()) || isAdmin());
       allow delete: if false;
       allow create: if isAdmin() && hasNoDeletionMetadata();
     }
@@ -209,9 +272,15 @@ service cloud.firestore {
     // ─── app_settings/{id} ──────────────────────────────────────────────
     // Reward amounts and other globals — readable by any signed-in user (the
     // client reads defaults on launch), writable only by admins.
+    // reward_settings.employee_cash_bonus is the sole source of the approved
+    // task bonus (see configuredTaskBonus in functions/src/admin-finance.ts).
+    // Every write must leave it valid, and the document cannot be deleted.
     match /app_settings/{id} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow create, update: if isAdmin()
+        && (id != 'reward_settings'
+          || isValidTaskBonus(request.resource.data.get('employee_cash_bonus', null)));
+      allow delete: if isAdmin() && id != 'reward_settings';
     }
 
     // ─── audit_logs/{id} ────────────────────────────────────────────────

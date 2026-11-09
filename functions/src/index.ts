@@ -7,6 +7,7 @@ import {isAllowedRequestedRole, isAllowedRole} from "./role-policy.js";
 import {submitReferralForUser} from "./referrals.js";
 import {submitEmployeeTaskForUser} from "./employee-tasks.js";
 import {deleteAccountDataForUser, revokeEvidenceTokens} from "./account-deletion.js";
+import {adjustUserBalanceForAdmin, reviewEmployeeTaskForAdmin} from "./admin-finance.js";
 import {canonicalRoleClaims, CanonicalRole} from "./role-claims.js";
 import {
   listAccountDeletionCandidates,
@@ -91,6 +92,16 @@ async function applyRoleClaims(targetUid: string, role: CanonicalRole): Promise<
     await auth.revokeRefreshTokens(targetUid);
   }
 }
+
+export const reviewEmployeeTask = onCall(async (request) => {
+  const actorUid = requireAdmin(request);
+  return reviewEmployeeTaskForAdmin(getFirestore(), actorUid, request.data);
+});
+
+export const adjustUserBalance = onCall(async (request) => {
+  const actorUid = requireAdmin(request);
+  return adjustUserBalanceForAdmin(getFirestore(), actorUid, request.data);
+});
 
 export const setUserRole = onCall(async (request) => {
   const actorUid = requireAdmin(request);

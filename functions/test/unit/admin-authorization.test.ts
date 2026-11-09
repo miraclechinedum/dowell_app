@@ -10,3 +10,10 @@ test("reconciliation authorization requires an admin custom claim", () => {
     (error: HttpsError) => error.code === "permission-denied");
   assert.equal(requireAdmin({auth: {uid: "admin", token: {admin: true}}}), "admin");
 });
+
+test("a role claim or Firestore role without admin:true never authorizes admin callables", () => {
+  assert.throws(() => requireAdmin({auth: {uid: "legacy-admin", token: {role: "admin"}}}),
+    (error: HttpsError) => error.code === "permission-denied");
+  assert.throws(() => requireAdmin({auth: {uid: "legacy-admin", token: {admin: "true"}}}),
+    (error: HttpsError) => error.code === "permission-denied");
+});
