@@ -22,19 +22,25 @@ service firebase.storage {
     function isValidEvidence() {
       return request.resource.size <= 10 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)')
-        && !request.resource.metadata.keys().hasAny(['archived']);
+        && notArchived(request.resource);
+    }
+
+    // Objects uploaded without custom metadata have no `metadata` property.
+    function notArchived(res) {
+      return !('metadata' in res) || res.metadata == null
+        || !res.metadata.keys().hasAny(['archived']);
     }
 
     match /task_evidence/{uid}/{requestId}/{fileName} {
       allow read: if isAdmin()
         || (isEmployee(uid)
-          && !resource.metadata.keys().hasAny(['archived']));
+          && notArchived(resource));
       // Firebase download tokens are server-managed metadata; rules cannot
       // reliably prevent their issuance. Archival scrubs URLs and revokes
       // metadata through the trusted backend.
       allow create: if isEmployee(uid) && isValidEvidence();
       allow update: if isEmployee(uid)
-        && !resource.metadata.keys().hasAny(['archived'])
+        && notArchived(resource)
         && isValidEvidence();
       allow delete: if false;
     }

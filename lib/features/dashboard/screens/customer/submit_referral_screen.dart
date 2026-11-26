@@ -28,6 +28,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   bool _formHasChanges = false; // Track form changes manually
   bool _consentChecked = false;
   String? _consentError;
+  PendingReferral? _pending;
 
   final List<Map<String, dynamic>> _serviceTypes = [
     {
@@ -84,6 +85,9 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     _phoneController.addListener(_updateFormChanges);
     _addressController.addListener(_updateFormChanges);
     _notesController.addListener(_updateFormChanges);
+
+    // Surfaces a submission left unconfirmed by a failure or app restart.
+    _loadPending();
   }
 
   void _updateFormChanges() {
@@ -99,6 +103,7 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   }
 
   Future<void> _submitReferral() async {
+    if (_isLoading) return;
     if (!_formKey.currentState!.validate()) {
       _showValidationError();
       return;
@@ -123,42 +128,259 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
-
-    try {
-      final referralForm = ReferralForm(
+    await _submit(
+      ReferralForm(
         referralName: _nameController.text.trim(),
         referralEmail: _emailController.text.trim(),
         referralPhone: _phoneController.text.trim(),
         address: _addressController.text.trim(),
         serviceType: _selectedServiceType!,
         notes: _notesController.text.trim(),
-      );
+      ),
+    );
+  }
 
-      final result = await ref
-          .read(referralProvider.notifier)
-          .submitReferral(referralForm);
+  Future<void> _submit(ReferralForm form) async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
 
-      // Show success dialog
-      await _showSuccessDialog(result['message'] as String);
-
-      // Refresh before leaving so the previous screen shows the new referral.
-      await ref.read(referralListProvider.notifier).refresh();
-
-      // Clear form
-      _clearForm();
-
-      // Navigate back
-      if (mounted) {
-        Navigator.pop(context);
-      }
+    Map<String, dynamic>? result;
+    PendingReferral? conflict;
+    try {
+      result = await ref.read(referralProvider.notifier).submitReferral(form);
+    } on PendingReferralMismatchException catch (error) {
+      conflict = error.pending;
     } catch (error) {
       _showErrorDialog(error);
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+    await _loadPending();
+    if (!mounted) return;
+
+    if (conflict != null) {
+      await _showPendingConflictDialog(conflict, form);
+      return;
+    }
+    if (result == null) return;
+
+    await _showSuccessDialog(result['message'] as String);
+    // Refresh before leaving so the previous screen shows the new referral.
+    await ref.read(referralListProvider.notifier).refresh();
+    _clearForm();
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _loadPending() async {
+    PendingReferral? pending;
+    try {
+      pending = await ref.read(referralProvider.notifier).readPending();
+    } catch (_) {
+      // The banner is advisory; submitting re-reads storage and reports
+      // failures without sending anything.
+      pending = null;
+    }
+    if (mounted) setState(() => _pending = pending);
+  }
+
+  /// Resends the pending submission's original payload and request ID. The
+  /// form is left as is, so changed details can be submitted afterwards.
+  Future<void> _retryPending() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+
+    Map<String, dynamic>? result;
+    try {
+      result = await ref
+          .read(referralProvider.notifier)
+          .retryPendingSubmission();
+    } catch (error) {
+      _showErrorDialog(error);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+    await _loadPending();
+    if (!mounted || result == null) return;
+
+    await _showSuccessDialog(result['message'] as String);
+    await ref.read(referralListProvider.notifier).refresh();
+  }
+
+  /// Returns true only if the user confirmed and the pending record is gone.
+  Future<bool> _confirmAndDiscardPending(
+    PendingReferral pending, {
+    required bool submitNewAfterwards,
+  }) async {
+    if (_isLoading) return false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard Pending Referral?'),
+        content: Text(
+          '${_pendingDescription(pending)}\n\n'
+          'Discarding stops this app from retrying it. If Dowell already '
+          'received it, it will not be removed, and the same person cannot '
+          'be referred twice.'
+          '${submitNewAfterwards ? '\n\nYour new details will then be submitted as a new referral.' : ''}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep It'),
+          ),
+          TextButton(
+            key: const Key('confirmDiscardPendingReferralButton'),
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return false;
+
+    setState(() => _isLoading = true);
+    var discarded = false;
+    try {
+      await ref.read(referralProvider.notifier).discardPendingSubmission();
+      discarded = true;
+    } catch (error) {
+      _showErrorDialog(error);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+    await _loadPending();
+    return discarded;
+  }
+
+  Future<void> _showPendingConflictDialog(
+    PendingReferral pending,
+    ReferralForm changedForm,
+  ) async {
+    final choice = await showDialog<_PendingChoice>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const Key('pendingReferralConflictDialog'),
+        title: const Text('Previous Referral Still Pending'),
+        content: Text(
+          '${_pendingDescription(pending)}\n\n'
+          'The details you entered are different. Retry the original '
+          'referral, or discard it and submit these details as a new one.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          if (pending.canRetry)
+            TextButton(
+              key: const Key('conflictRetryPendingButton'),
+              onPressed: () => Navigator.pop(context, _PendingChoice.retry),
+              child: const Text('Retry original referral'),
+            ),
+          TextButton(
+            key: const Key('conflictDiscardPendingButton'),
+            onPressed: () => Navigator.pop(context, _PendingChoice.discard),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text(
+              'Discard pending submission and start new referral',
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case _PendingChoice.retry:
+        await _retryPending();
+      case _PendingChoice.discard:
+        final discarded = await _confirmAndDiscardPending(
+          pending,
+          submitNewAfterwards: true,
+        );
+        // The new request ID is created only now, after confirmation.
+        if (discarded && mounted) await _submit(changedForm);
+      case null:
+        break;
+    }
+  }
+
+  String _pendingDescription(PendingReferral pending) {
+    final form = pending.form;
+    if (!pending.isReadable) {
+      return 'An earlier referral was not confirmed as received, and its '
+          'saved details could not be read.';
+    }
+    if (form == null) {
+      return 'An earlier referral was not confirmed as received. Its details '
+          'were not saved on this device, so it can only be retried by '
+          'entering exactly the same details.';
+    }
+    return 'An earlier referral for ${form.referralName} was not confirmed '
+        'as received.';
+  }
+
+  Widget _buildPendingBanner(PendingReferral pending) {
+    return Container(
+      key: const Key('pendingReferralBanner'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.schedule, color: Colors.amber),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Referral Not Yet Confirmed',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _pendingDescription(pending),
+            style: const TextStyle(color: AppColors.textNeutral),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              if (pending.canRetry)
+                OutlinedButton(
+                  key: const Key('pendingBannerRetryButton'),
+                  onPressed: _isLoading ? null : _retryPending,
+                  child: const Text('Retry original referral'),
+                ),
+              TextButton(
+                key: const Key('pendingBannerDiscardButton'),
+                onPressed: _isLoading
+                    ? null
+                    : () => _confirmAndDiscardPending(
+                        pending,
+                        submitNewAfterwards: false,
+                      ),
+                style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                child: const Text('Discard pending submission'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   void _showValidationError() {
@@ -201,6 +423,11 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
   }
 
   void _showErrorDialog(Object error) {
+    if (!mounted) return;
+    if (error is ReferralSubmissionException &&
+        error.stage == ReferralSubmissionStage.inProgress) {
+      return;
+    }
     final message = error is ReferralSubmissionException
         ? error.userMessage
         : 'We could not submit your referral.';
@@ -340,6 +567,11 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
               ),
 
               const SizedBox(height: 24),
+
+              if (_pending != null) ...[
+                _buildPendingBanner(_pending!),
+                const SizedBox(height: 24),
+              ],
 
               // Referral Form
               Form(
@@ -677,9 +909,11 @@ class _SubmitReferralScreenState extends ConsumerState<SubmitReferralScreen> {
     );
 
     if (result == true && mounted) {
-      await ref.read(referralProvider.notifier).resetState();
-      if (!mounted) return;
+      // Discards the form only; a pending submission is kept for the banner.
+      ref.read(referralProvider.notifier).resetState();
       Navigator.pop(context);
     }
   }
 }
+
+enum _PendingChoice { retry, discard }
